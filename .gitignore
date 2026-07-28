@@ -1,0 +1,41 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+# 本地密钥与环境配置：只提交脱敏模板
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# 本地 IDE、Agent 协作配置与内部学习/规划文档
+.idea/
+.vscode/
+.agents/
+.codex/
+AGENTS.md
+docs/
+MarkWord/
+
+# 依赖、测试和构建产物
+node_modules/
+dist/
+.npm-cache/
+*.tsbuildinfo
+*.log
+.runtime/
+data/chroma/
+data/checkpoints/
+data/uploads/
+backend/data/
+*.sqlite
+*.sqlite3
+*.db
+logs/
+.docker-e2e-frontend-dist/
+.delivery/
+
+# 非正式手工上传测试样本；正式演示知识保留在 demo_data/knowledge/
+demo_data/manual_upload/

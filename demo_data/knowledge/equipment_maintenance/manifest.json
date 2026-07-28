@@ -1,0 +1,49 @@
+{
+  "manifest_version": "2026.1",
+  "documents": [
+    {
+      "path": "equipment_fault_reporting_policy.md",
+      "knowledge_space": "equipment_maintenance",
+      "title": "设备故障报告与维修工单管理办法",
+      "source_uri": "demo-maintenance://operations/equipment-fault-reporting",
+      "version_label": "2026.1",
+      "source_department": "设备管理部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "admin"]
+    },
+    {
+      "path": "shutdown_energy_isolation_safety.md",
+      "knowledge_space": "equipment_maintenance",
+      "title": "设备停机、能源隔离与现场安全规范",
+      "source_uri": "demo-maintenance://safety/shutdown-energy-isolation",
+      "version_label": "2026.1",
+      "source_department": "安全生产部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "admin"]
+    },
+    {
+      "path": "press_abnormal_vibration_guide.md",
+      "knowledge_space": "equipment_maintenance",
+      "title": "冲压设备异常振动与异响排查指南",
+      "source_uri": "demo-maintenance://engineering/press-vibration-guide",
+      "version_label": "2026.1",
+      "source_department": "设备工程部",
+      "trust_level": "HIGH",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "admin"]
+    },
+    {
+      "path": "maintenance_restart_acceptance.md",
+      "knowledge_space": "equipment_maintenance",
+      "title": "维修完成与复机验收规范",
+      "source_uri": "demo-maintenance://operations/restart-acceptance",
+      "version_label": "2026.1",
+      "source_department": "设备管理部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["approver", "operator", "admin"]
+    }
+  ]
+}

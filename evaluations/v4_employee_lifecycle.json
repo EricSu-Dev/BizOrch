@@ -1,0 +1,51 @@
+{
+  "suite_name": "v4_employee_lifecycle_knowledge",
+  "suite_version": "2026.1",
+  "cases": [
+    {
+      "case_id": "v4-onboarding-account-activation",
+      "category": "RAG_RETRIEVAL",
+      "description": "HR 查询入职账号激活前置条件时，必须引用入职规范。",
+      "query": "新员工账号需要满足哪些条件才能激活？",
+      "knowledge_space": "employee_services",
+      "required_source_uris": ["demo-employee://hr/onboarding-account-provisioning"],
+      "required_version_labels": ["2026.1"],
+      "required_excerpt_terms": ["账号不得启用"],
+      "actor_id": "EMP-HR-OPERATOR",
+      "actor_roles": ["hr"]
+    },
+    {
+      "case_id": "v4-transfer-baseline-diff",
+      "category": "RAG_RETRIEVAL",
+      "description": "调岗权限问题必须引用岗位基线制度，不应从其他知识类别取证。",
+      "query": "员工调岗后旧权限和新岗位权限应该如何处理？",
+      "knowledge_space": "employee_services",
+      "required_source_uris": ["demo-employee://hr/transfer-access-baseline"],
+      "forbidden_source_uris": ["demo-maintenance://operations/equipment-fault-reporting"],
+      "required_excerpt_terms": ["旧权限先撤销"],
+      "actor_id": "EMP-HR-OPERATOR",
+      "actor_roles": ["hr"]
+    },
+    {
+      "case_id": "v4-offboarding-no-auto-rollback",
+      "category": "RAG_RETRIEVAL",
+      "description": "离职安全动作的不可自动恢复规则必须有制度依据。",
+      "query": "离职后系统能否自动恢复账号和权限？",
+      "knowledge_space": "employee_services",
+      "required_source_uris": ["demo-employee://hr/offboarding-asset-handover"],
+      "required_excerpt_terms": ["不得由自动化流程自行恢复"],
+      "actor_id": "EMP-HR-OPERATOR",
+      "actor_roles": ["hr"]
+    },
+    {
+      "case_id": "v4-job-baseline-minimum-privilege",
+      "category": "RAG_RETRIEVAL",
+      "description": "岗位基线说明应返回最小权限与独立额外权限申请约束。",
+      "query": "生产计划专员的岗位基线权限以及额外CRM权限应如何申请？",
+      "knowledge_space": "employee_services",
+      "required_source_uris": ["demo-employee://security/job-baseline-minimum-privilege"],
+      "actor_id": "EMP-HR-OPERATOR",
+      "actor_roles": ["hr"]
+    }
+  ]
+}

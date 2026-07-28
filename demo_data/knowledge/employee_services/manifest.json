@@ -1,0 +1,49 @@
+{
+  "manifest_version": "2026.1",
+  "documents": [
+    {
+      "path": "employee_onboarding_account_provisioning.md",
+      "knowledge_space": "employee_services",
+      "title": "员工入职办理与账号开通规范",
+      "source_uri": "demo-employee://hr/onboarding-account-provisioning",
+      "version_label": "2026.1",
+      "source_department": "人力资源部、信息技术服务部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "hr", "admin"]
+    },
+    {
+      "path": "employee_transfer_access_baseline.md",
+      "knowledge_space": "employee_services",
+      "title": "员工调岗与岗位权限基线管理办法",
+      "source_uri": "demo-employee://hr/transfer-access-baseline",
+      "version_label": "2026.1",
+      "source_department": "人力资源部、信息安全部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "hr", "admin"]
+    },
+    {
+      "path": "employee_offboarding_asset_handover.md",
+      "knowledge_space": "employee_services",
+      "title": "员工离职、账号停用与资产交接规范",
+      "source_uri": "demo-employee://hr/offboarding-asset-handover",
+      "version_label": "2026.1",
+      "source_department": "人力资源部、信息安全部、行政保障部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "hr", "admin"]
+    },
+    {
+      "path": "job_baseline_access_minimum_privilege.md",
+      "knowledge_space": "employee_services",
+      "title": "岗位基线权限与最小权限配置说明",
+      "source_uri": "demo-employee://security/job-baseline-minimum-privilege",
+      "version_label": "2026.1",
+      "source_department": "信息安全部、企业IT服务部",
+      "trust_level": "HIGH",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "hr", "admin"]
+    }
+  ]
+}

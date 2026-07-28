@@ -1,0 +1,1 @@
+"""Ticket projection tests."""

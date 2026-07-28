@@ -1,0 +1,49 @@
+{
+  "manifest_version": "2026.1",
+  "documents": [
+    {
+      "path": "office_procurement_governance.md",
+      "knowledge_space": "procurement",
+      "title": "办公采购申请与审批管理规范",
+      "source_uri": "bizorch://policy/procurement/governance/2026.1",
+      "version_label": "2026.1",
+      "source_department": "采购运营部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00Z",
+      "allowed_roles": ["employee", "approver", "operator"]
+    },
+    {
+      "path": "cost_center_budget_guidance.md",
+      "knowledge_space": "procurement",
+      "title": "成本中心与预算使用指引",
+      "source_uri": "bizorch://policy/procurement/budget/2026.1",
+      "version_label": "2026.1",
+      "source_department": "财务预算管理部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00Z",
+      "allowed_roles": ["employee", "approver", "operator"]
+    },
+    {
+      "path": "office_equipment_standard.md",
+      "knowledge_space": "procurement",
+      "title": "办公设备采购与验收标准",
+      "source_uri": "bizorch://standard/procurement/office-equipment/2026.1",
+      "version_label": "2026.1",
+      "source_department": "行政服务部",
+      "trust_level": "HIGH",
+      "effective_from": "2026-01-01T00:00:00Z",
+      "allowed_roles": ["employee", "approver", "operator"]
+    },
+    {
+      "path": "emergency_purchase_boundary.md",
+      "knowledge_space": "procurement",
+      "title": "紧急采购与例外处理边界",
+      "source_uri": "bizorch://policy/procurement/emergency/2026.1",
+      "version_label": "2026.1",
+      "source_department": "采购运营部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00Z",
+      "allowed_roles": ["approver", "operator"]
+    }
+  ]
+}

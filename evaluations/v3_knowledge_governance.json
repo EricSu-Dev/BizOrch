@@ -1,0 +1,140 @@
+{
+  "suite_name": "BizOrch V3 Knowledge Governance and Visibility",
+  "suite_version": "2026.3",
+  "cases": [
+    {
+      "case_id": "governance_published_employee_visible",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "当前生效且已发布已索引的公共知识对员工可见",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "required_source_uris": ["policy://v3/public"]
+    },
+    {
+      "case_id": "governance_draft_hidden",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "即使向量存在，草稿也不能形成员工引用",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "forbidden_source_uris": ["policy://v3/draft"]
+    },
+    {
+      "case_id": "governance_unindexed_hidden",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "发布状态存在但索引未完成的文档不可见",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "forbidden_source_uris": ["policy://v3/unindexed"]
+    },
+    {
+      "case_id": "governance_future_hidden",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "尚未到生效时间的制度不可见",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "forbidden_source_uris": ["policy://v3/future"]
+    },
+    {
+      "case_id": "governance_expired_hidden",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "已经失效的制度不可见",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "forbidden_source_uris": ["policy://v3/expired"]
+    },
+    {
+      "case_id": "governance_admin_role_denied",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "员工不能获知管理员专属知识",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "forbidden_source_uris": ["policy://v3/admin"]
+    },
+    {
+      "case_id": "governance_admin_role_allowed",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "管理员角色可以访问管理员专属知识",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-ADMIN",
+      "actor_roles": ["admin"],
+      "top_k": 20,
+      "required_source_uris": ["policy://v3/admin"]
+    },
+    {
+      "case_id": "governance_user_allowlist_allowed",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "用户白名单中的员工可以访问定向知识",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-TARGET",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "required_source_uris": ["policy://v3/user-specific"]
+    },
+    {
+      "case_id": "governance_user_allowlist_denied",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "非白名单员工不能访问定向知识",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-OTHER",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "forbidden_source_uris": ["policy://v3/user-specific"]
+    },
+    {
+      "case_id": "governance_only_current_version_visible",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "同一来源只允许当前发布版本形成引用",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "required_source_uris": ["policy://v3/versioned"],
+      "required_version_labels": ["current-v2"],
+      "forbidden_version_labels": ["obsolete-v1"]
+    },
+    {
+      "case_id": "governance_retired_hidden",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "已下线文档即使向量残留也不可见",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "forbidden_source_uris": ["policy://v3/retired"]
+    },
+    {
+      "case_id": "governance_wrong_space_hidden",
+      "category": "KNOWLEDGE_GOVERNANCE",
+      "description": "其他知识空间的文档不能跨空间泄露",
+      "query": "governance visibility policy",
+      "knowledge_space": "access_and_security",
+      "actor_id": "EMP-1001",
+      "actor_roles": ["employee"],
+      "top_k": 20,
+      "forbidden_source_uris": ["policy://v3/equipment"]
+    }
+  ]
+}

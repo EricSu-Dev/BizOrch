@@ -1,0 +1,114 @@
+name: bizorch
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: bizorch-api:0.1.0
+    init: true
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      BIZORCH_ENVIRONMENT: ${BIZORCH_ENVIRONMENT:-development}
+      BIZORCH_DEBUG: ${BIZORCH_DEBUG:-false}
+      BIZORCH_CHROMA_PATH: /app/data/chroma
+      BIZORCH_KNOWLEDGE_UPLOAD_PATH: /app/data/uploads
+      BIZORCH_CHECKPOINT_PATH: /app/data/checkpoints/langgraph.db
+      BIZORCH_ENTERPRISE_OPS_BASE_URL: http://enterprise-system:8100
+      BIZORCH_ENTERPRISE_OPS_MCP_URL: http://enterprise-ops-mcp:8200/mcp
+      ENTERPRISE_INTERNAL_TOKEN: ${ENTERPRISE_INTERNAL_TOKEN:-}
+    ports:
+      - "127.0.0.1:${BIZORCH_API_PORT:-8000}:8000"
+    volumes:
+      - bizorch_chroma:/app/data/chroma
+      - bizorch_checkpoints:/app/data/checkpoints
+      - bizorch_uploads:/app/data/uploads
+      - bizorch_logs:/app/logs
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      enterprise-system:
+        condition: service_healthy
+      enterprise-ops-mcp:
+        condition: service_healthy
+
+  enterprise-ops-mcp:
+    build:
+      context: .
+      dockerfile: enterprise_ops_mcp/Dockerfile
+    image: bizorch-enterprise-ops-mcp:0.1.0
+    init: true
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENTERPRISE_OPS_BASE_URL: http://enterprise-system:8100
+      ENTERPRISE_INTERNAL_TOKEN: ${ENTERPRISE_INTERNAL_TOKEN:-}
+    expose:
+      - "8200"
+    mem_limit: 256m
+    cpus: 0.35
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      enterprise-system:
+        condition: service_healthy
+
+  knowledge-index-worker:
+    image: bizorch-api:0.1.0
+    init: true
+    restart: unless-stopped
+    command: ["python", "run_knowledge_index_worker.py"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      BIZORCH_CHROMA_PATH: /app/data/chroma
+      BIZORCH_KNOWLEDGE_INDEX_POLL_INTERVAL_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_POLL_INTERVAL_SECONDS:-2}
+      BIZORCH_KNOWLEDGE_INDEX_LEASE_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_LEASE_SECONDS:-300}
+      BIZORCH_KNOWLEDGE_INDEX_RETRY_BASE_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_RETRY_BASE_SECONDS:-5}
+    volumes:
+      - bizorch_chroma:/app/data/chroma
+    mem_limit: 384m
+    cpus: 0.35
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      api:
+        condition: service_healthy
+
+  enterprise-system:
+    build:
+      context: .
+      dockerfile: enterprise_system/Dockerfile
+    image: bizorch-enterprise-system:0.1.0
+    init: true
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENTERPRISE_DATABASE_URL: ${ENTERPRISE_DATABASE_URL:-}
+      ENTERPRISE_INTERNAL_TOKEN: ${ENTERPRISE_INTERNAL_TOKEN:-}
+    ports:
+      - "127.0.0.1:${ENTERPRISE_SYSTEM_PORT:-8100}:8100"
+    mem_limit: 256m
+    cpus: 0.35
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  bizorch_chroma:
+  bizorch_checkpoints:
+  bizorch_uploads:
+  bizorch_logs:

@@ -1,0 +1,38 @@
+{
+  "manifest_version": "2026.1",
+  "documents": [
+    {
+      "path": "identity_access_policy.md",
+      "knowledge_space": "access_and_security",
+      "title": "身份与访问控制管理制度",
+      "source_uri": "demo-policy://information-security/identity-access-control",
+      "version_label": "2026.1",
+      "source_department": "信息安全部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "admin"]
+    },
+    {
+      "path": "temporary_access_guide.md",
+      "knowledge_space": "access_and_security",
+      "title": "临时系统权限申请与审批指南",
+      "source_uri": "demo-policy://it-service/temporary-access-guide",
+      "version_label": "2026.1",
+      "source_department": "企业IT服务部",
+      "trust_level": "AUTHORITATIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "admin"]
+    },
+    {
+      "path": "remote_access_security.md",
+      "knowledge_space": "access_and_security",
+      "title": "远程访问与终端安全规范",
+      "source_uri": "demo-policy://information-security/remote-access",
+      "version_label": "2026.1",
+      "source_department": "信息安全部",
+      "trust_level": "HIGH",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "allowed_roles": ["employee", "approver", "operator", "admin"]
+    }
+  ]
+}

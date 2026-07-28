@@ -1,0 +1,41 @@
+# Windows Docker Desktop E2E override.
+#
+# SQLite checkpoint files need POSIX file-lock semantics. Docker Desktop bind
+# mounts backed by a Windows NTFS directory may report `sqlite3.OperationalError:
+# disk I/O error`; named volumes are managed inside Docker's Linux VM and avoid
+# that host-filesystem limitation. Production Linux deployment continues to use
+# the bind mounts defined in compose.yaml.
+
+services:
+  bizorch-api:
+    volumes: !override
+      - type: volume
+        source: e2e-chroma
+        target: /app/data/chroma
+      - type: volume
+        source: e2e-checkpoints
+        target: /app/data/checkpoints
+      - type: volume
+        source: e2e-uploads
+        target: /app/data/uploads
+      - type: volume
+        source: e2e-logs
+        target: /app/logs
+
+  knowledge-index-worker:
+    volumes: !override
+      - type: volume
+        source: e2e-chroma
+        target: /app/data/chroma
+
+  evaluation-live:
+    volumes: !override
+      - type: volume
+        source: e2e-chroma
+        target: /app/data/chroma
+
+volumes:
+  e2e-chroma:
+  e2e-checkpoints:
+  e2e-uploads:
+  e2e-logs:

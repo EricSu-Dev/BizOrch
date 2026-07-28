@@ -1,0 +1,186 @@
+name: ${COMPOSE_PROJECT_NAME:-bizorch}
+
+x-api-data-volumes: &api-data-volumes
+  - type: bind
+    source: ${BIZORCH_DATA_DIR:?set BIZORCH_DATA_DIR in the Compose env file}/chroma
+    target: /app/data/chroma
+  - type: bind
+    source: ${BIZORCH_DATA_DIR:?set BIZORCH_DATA_DIR in the Compose env file}/checkpoints
+    target: /app/data/checkpoints
+  - type: bind
+    source: ${BIZORCH_DATA_DIR:?set BIZORCH_DATA_DIR in the Compose env file}/uploads
+    target: /app/data/uploads
+  - type: bind
+    source: ${BIZORCH_LOG_DIR:?set BIZORCH_LOG_DIR in the Compose env file}
+    target: /app/logs
+
+x-chroma-volume: &chroma-volume
+  - type: bind
+    source: ${BIZORCH_DATA_DIR:?set BIZORCH_DATA_DIR in the Compose env file}/chroma
+    target: /app/data/chroma
+
+services:
+  enterprise-system:
+    image: ${BIZORCH_ENTERPRISE_IMAGE:?set an immutable enterprise image tag}
+    environment:
+      TZ: Asia/Shanghai
+      ENTERPRISE_DATABASE_URL: ${ENTERPRISE_DATABASE_URL:?set ENTERPRISE_DATABASE_URL}
+      ENTERPRISE_INTERNAL_TOKEN: ${ENTERPRISE_INTERNAL_TOKEN:?set ENTERPRISE_INTERNAL_TOKEN}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - enterprise-data-egress
+      - enterprise-backplane
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.30
+
+  enterprise-ops-mcp:
+    image: ${BIZORCH_MCP_IMAGE:?set an immutable MCP image tag}
+    environment:
+      TZ: Asia/Shanghai
+      ENTERPRISE_OPS_BASE_URL: http://enterprise-system:8100
+      ENTERPRISE_INTERNAL_TOKEN: ${ENTERPRISE_INTERNAL_TOKEN:?set ENTERPRISE_INTERNAL_TOKEN}
+    networks:
+      - action-backplane
+      - enterprise-backplane
+    depends_on:
+      enterprise-system:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.30
+
+  bizorch-api:
+    image: ${BIZORCH_API_IMAGE:?set an immutable API image tag}
+    environment:
+      TZ: Asia/Shanghai
+      BIZORCH_ENVIRONMENT: ${BIZORCH_ENVIRONMENT:-production}
+      BIZORCH_DEBUG: ${BIZORCH_DEBUG:-false}
+      BIZORCH_AUTH_SESSION_TTL_HOURS: ${BIZORCH_AUTH_SESSION_TTL_HOURS:-8}
+      BIZORCH_DATABASE_URL: ${BIZORCH_DATABASE_URL:?set BIZORCH_DATABASE_URL}
+      BIZORCH_REDIS_URL: ${BIZORCH_REDIS_URL:-}
+      BIZORCH_CHROMA_PATH: /app/data/chroma
+      BIZORCH_KNOWLEDGE_UPLOAD_PATH: /app/data/uploads
+      BIZORCH_CHECKPOINT_PATH: /app/data/checkpoints/langgraph.db
+      BIZORCH_KNOWLEDGE_INDEX_POLL_INTERVAL_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_POLL_INTERVAL_SECONDS:-2}
+      BIZORCH_KNOWLEDGE_INDEX_LEASE_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_LEASE_SECONDS:-300}
+      BIZORCH_KNOWLEDGE_INDEX_RETRY_BASE_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_RETRY_BASE_SECONDS:-5}
+      BIZORCH_ENTERPRISE_OPS_MCP_URL: http://enterprise-ops-mcp:8200/mcp
+      BIZORCH_ENTERPRISE_OPS_BASE_URL: http://enterprise-system:8100
+      BIZORCH_DEEPSEEK_BASE_URL: ${BIZORCH_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      BIZORCH_DEEPSEEK_MODEL: ${BIZORCH_DEEPSEEK_MODEL:-deepseek-v4-flash}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?set DASHSCOPE_API_KEY}
+      BIZORCH_OSS_BUCKET_NAME: ${BIZORCH_OSS_BUCKET_NAME:?set BIZORCH_OSS_BUCKET_NAME}
+      BIZORCH_OSS_ENDPOINT: ${BIZORCH_OSS_ENDPOINT:?set BIZORCH_OSS_ENDPOINT}
+      BIZORCH_OSS_ACCESS_KEY_ID: ${BIZORCH_OSS_ACCESS_KEY_ID:?set BIZORCH_OSS_ACCESS_KEY_ID}
+      BIZORCH_OSS_ACCESS_KEY_SECRET: ${BIZORCH_OSS_ACCESS_KEY_SECRET:?set BIZORCH_OSS_ACCESS_KEY_SECRET}
+      BIZORCH_OSS_AVATAR_PREFIX: ${BIZORCH_OSS_AVATAR_PREFIX:-bizorch/avatars}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - api-egress
+      - action-backplane
+    depends_on:
+      enterprise-system:
+        condition: service_healthy
+      enterprise-ops-mcp:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:${BIZORCH_API_HOST_PORT:-18000}:8000
+    volumes: *api-data-volumes
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.70
+
+  knowledge-index-worker:
+    image: ${BIZORCH_API_IMAGE:?set an immutable API image tag}
+    command: ["python", "run_knowledge_index_worker.py"]
+    healthcheck:
+      disable: true
+    environment:
+      TZ: Asia/Shanghai
+      BIZORCH_DEBUG: ${BIZORCH_DEBUG:-false}
+      BIZORCH_DATABASE_URL: ${BIZORCH_DATABASE_URL:?set BIZORCH_DATABASE_URL}
+      BIZORCH_CHROMA_PATH: /app/data/chroma
+      BIZORCH_KNOWLEDGE_INDEX_POLL_INTERVAL_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_POLL_INTERVAL_SECONDS:-2}
+      BIZORCH_KNOWLEDGE_INDEX_LEASE_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_LEASE_SECONDS:-300}
+      BIZORCH_KNOWLEDGE_INDEX_RETRY_BASE_SECONDS: ${BIZORCH_KNOWLEDGE_INDEX_RETRY_BASE_SECONDS:-5}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?set DASHSCOPE_API_KEY}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - api-egress
+    depends_on:
+      bizorch-api:
+        condition: service_healthy
+    volumes: *chroma-volume
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.40
+
+  evaluation-contract:
+    image: ${BIZORCH_API_IMAGE:?set an immutable API image tag}
+    profiles: ["evaluation"]
+    command: ["python", "run_evaluation_worker.py"]
+    healthcheck:
+      disable: true
+    environment:
+      TZ: Asia/Shanghai
+      BIZORCH_DEBUG: ${BIZORCH_DEBUG:-false}
+      BIZORCH_DATABASE_URL: ${BIZORCH_DATABASE_URL:?set BIZORCH_DATABASE_URL}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - api-egress
+    depends_on:
+      bizorch-api:
+        condition: service_healthy
+    mem_limit: 384m
+    cpus: 0.40
+
+  evaluation-live:
+    image: ${BIZORCH_API_IMAGE:?set an immutable API image tag}
+    profiles: ["evaluation-live"]
+    command: ["python", "run_evaluation_worker.py", "--live"]
+    healthcheck:
+      disable: true
+    environment:
+      TZ: Asia/Shanghai
+      BIZORCH_DEBUG: ${BIZORCH_DEBUG:-false}
+      BIZORCH_DATABASE_URL: ${BIZORCH_DATABASE_URL:?set BIZORCH_DATABASE_URL}
+      BIZORCH_CHROMA_PATH: /app/data/chroma
+      BIZORCH_DEEPSEEK_BASE_URL: ${BIZORCH_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      BIZORCH_DEEPSEEK_MODEL: ${BIZORCH_DEEPSEEK_MODEL:-deepseek-v4-flash}
+      BIZORCH_EVALUATION_LIVE_MAX_CASES: ${BIZORCH_EVALUATION_LIVE_MAX_CASES:-20}
+      BIZORCH_EVALUATION_LIVE_MAX_CALLS: ${BIZORCH_EVALUATION_LIVE_MAX_CALLS:-40}
+      BIZORCH_EVALUATION_LIVE_MAX_INPUT_TOKENS: ${BIZORCH_EVALUATION_LIVE_MAX_INPUT_TOKENS:-200000}
+      BIZORCH_EVALUATION_LIVE_MAX_OUTPUT_TOKENS: ${BIZORCH_EVALUATION_LIVE_MAX_OUTPUT_TOKENS:-50000}
+      BIZORCH_EVALUATION_LIVE_MAX_EMBEDDING_TEXTS: ${BIZORCH_EVALUATION_LIVE_MAX_EMBEDDING_TEXTS:-100}
+      BIZORCH_EVALUATION_LIVE_CASE_TIMEOUT_SECONDS: ${BIZORCH_EVALUATION_LIVE_CASE_TIMEOUT_SECONDS:-60}
+      BIZORCH_EVALUATION_LIVE_RUN_TIMEOUT_SECONDS: ${BIZORCH_EVALUATION_LIVE_RUN_TIMEOUT_SECONDS:-1200}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?set DASHSCOPE_API_KEY}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - api-egress
+    volumes: *chroma-volume
+    depends_on:
+      bizorch-api:
+        condition: service_healthy
+    mem_limit: 384m
+    cpus: 0.40
+
+networks:
+  api-egress:
+    driver: bridge
+  enterprise-data-egress:
+    driver: bridge
+  action-backplane:
+    driver: bridge
+    internal: true
+  enterprise-backplane:
+    driver: bridge
+    internal: true
