@@ -7,6 +7,8 @@ import { ApproverRoute } from '../components/ApproverRoute'
 import { KnowledgeManagerRoute } from '../components/KnowledgeManagerRoute'
 import { EvaluationManagerRoute } from '../components/EvaluationManagerRoute'
 import { useAuthStore } from '../stores/authStore'
+import { warmupConversations } from '../api/conversationWarmup'
+import { getAccessToken } from '../api/tokenStorage'
 
 const AppShell = lazy(() =>
   import('../components/AppShell').then((module) => ({ default: module.AppShell })),
@@ -46,6 +48,11 @@ export function App() {
   const initialized = useAuthStore((state) => state.initialized)
 
   useEffect(() => {
+    if (getAccessToken() && ['/', '/service'].includes(window.location.pathname)) {
+      warmupConversations()
+      void import('../components/AppShell')
+      void import('../pages/ChatPage')
+    }
     void initialize()
   }, [initialize])
 

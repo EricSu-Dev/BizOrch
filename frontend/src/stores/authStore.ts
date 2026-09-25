@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import { currentUser, login, logout } from '../api/auth'
+import { clearConversationWarmup, warmupConversations } from '../api/conversationWarmup'
 import type { AuthUser } from '../api/contracts'
 import {
   clearAccessToken,
@@ -31,6 +32,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       set({ user: await currentUser(), initialized: true })
     } catch {
+      clearConversationWarmup()
       clearAccessToken()
       set({ user: null, initialized: true })
     }
@@ -41,6 +43,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const result = await login(username, password)
       setAccessToken(result.access_token)
+      warmupConversations()
       set({ user: result.user })
     } finally {
       set({ submitting: false })
@@ -51,6 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await logout()
     } finally {
+      clearConversationWarmup()
       clearAccessToken()
       set({ user: null })
     }

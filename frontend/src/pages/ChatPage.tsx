@@ -3,6 +3,7 @@ import { Button, Dropdown, Empty, Input, Modal, Spin, Tag, message as toast } fr
 import axios from 'axios'
 
 import { publicErrorMessage } from '../api/client'
+import { loadInitialConversations } from '../api/conversationWarmup'
 import type {
   ConversationMessage,
   ConversationSummary,
@@ -259,8 +260,11 @@ export function ChatPage() {
     [conversations, selectedId],
   )
 
-  const refreshConversations = async (preferredId?: string) => {
-    const items = await listConversations()
+  const refreshConversations = async (
+    preferredId?: string,
+    load: () => Promise<ConversationSummary[]> = listConversations,
+  ) => {
+    const items = await load()
     setConversations(items)
     const next = preferredId || selectedId || items[0]?.conversation_id
     setSelectedId(next)
@@ -270,7 +274,7 @@ export function ChatPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const id = await refreshConversations()
+        const id = await refreshConversations(undefined, loadInitialConversations)
         if (id) setMessages(await listMessages(id))
       } catch (error) {
         toast.error(publicErrorMessage(error))

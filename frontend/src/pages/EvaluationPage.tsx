@@ -56,29 +56,66 @@ export function EvaluationPage() {
   const [archiveSummary, setArchiveSummary] = useState('')
 
   const reloadBadCases = useCallback(async () => { setBadCases((await listEvaluationBadCases()).items) }, [])
-  const loadOverview = useCallback(async () => {
-    setLoading(true)
+  const loadOverview = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     try {
       const [suitePage, runPage, badCasePage, baselinePage] = await Promise.all([listEvaluationSuites(), listEvaluationRuns(), listEvaluationBadCases(), listEvaluationBaselines()])
       setSuites(suitePage.items); setRuns(runPage.items); setBadCases(badCasePage.items)
       setBaselineRunId(baselinePage.items.find((item) => item.is_current)?.run_id || null)
       setSuiteKey((value) => value || suitePage.items[0]?.suite_key || '')
-    } catch (error) { toast.error(publicErrorMessage(error)) } finally { setLoading(false) }
+    } catch (error) { toast.error(publicErrorMessage(error)) } finally { if (showLoading) setLoading(false) }
   }, [])
-  const loadDetail = useCallback(async (id: string) => {
-    try {
-      const [run, resultPage] = await Promise.all([getEvaluationRun(id), listEvaluationCases(id)])
-      setSelectedRun(run); setCases(resultPage.items)
-      if (run.status === 'COMPLETED') { try { setComparison(await getEvaluationComparison(id)) } catch { setComparison(null) } } else setComparison(null)
-    } catch (error) { toast.error(publicErrorMessage(error)); navigate('/evaluations', { replace: true }) }
-  }, [navigate])
   useEffect(() => { void loadOverview() }, [loadOverview])
-  useEffect(() => { if (runId) void loadDetail(runId); else { setSelectedRun(null); setCases([]); setComparison(null) } }, [loadDetail, runId])
   useEffect(() => {
-    if (selectedRun?.status !== 'PENDING' && selectedRun?.status !== 'RUNNING') return
-    const timer = window.setInterval(() => { void loadOverview(); if (runId) void loadDetail(runId) }, 2000)
-    return () => window.clearInterval(timer)
-  }, [loadDetail, loadOverview, runId, selectedRun?.status])
+    if (!runId) { setSelectedRun(null); setCases([]); setComparison(null); return }
+    setSelectedRun(null); setCases([]); setComparison(null)
+    let active = true
+    let busy = false
+    let timer: number | undefined
+    let completedCount = -1
+    const schedule = () => {
+      if (active && document.visibilityState === 'visible') timer = window.setTimeout(() => void refresh(), 2000)
+    }
+    const refresh = async (initial = false) => {
+      if (!active || busy || document.visibilityState === 'hidden') return
+      busy = true
+      let shouldPoll = false
+      try {
+        const run = await getEvaluationRun(runId)
+        if (!active) return
+        const finished = run.status !== 'PENDING' && run.status !== 'RUNNING'
+        const changed = run.completed_case_count !== completedCount
+        setSelectedRun(run)
+        if (initial || changed || finished) {
+          const results = await listEvaluationCases(runId)
+          if (!active) return
+          setCases(results.items)
+          completedCount = run.completed_case_count
+        }
+        if (finished) {
+          const nextComparison = run.status === 'COMPLETED' ? await getEvaluationComparison(runId).catch(() => null) : null
+          if (!active) return
+          setComparison(nextComparison)
+          if (!initial) await loadOverview(false)
+        } else {
+          setComparison(null)
+          shouldPoll = true
+        }
+      } catch (error) {
+        if (!active) return
+        toast.error(publicErrorMessage(error))
+        if (initial) navigate('/evaluations', { replace: true })
+        else shouldPoll = true
+      } finally { busy = false; if (shouldPoll) schedule() }
+    }
+    const onVisibilityChange = () => {
+      window.clearTimeout(timer)
+      if (document.visibilityState === 'visible') void refresh()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    void refresh(true)
+    return () => { active = false; window.clearTimeout(timer); document.removeEventListener('visibilitychange', onVisibilityChange) }
+  }, [loadOverview, navigate, runId])
 
   const createRun = async () => {
     if (!suiteKey || (mode === 'LIVE_READ_ONLY' && !confirmLive)) return
