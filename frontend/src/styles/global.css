@@ -196,6 +196,7 @@ button, input, textarea { font: inherit; }
 .composer .ant-input { border: 0; box-shadow: none; padding: 5px 0; resize: none; }
 .composer-actions { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #eef0ec; padding-top: 10px; }
 .composer-actions span { color: #87928f; font-size: 11px; }
+.send-uncertain { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; padding: 10px 14px; border: 1px solid #ead5a2; border-radius: 10px; background: #fff8e8; color: #795717; font-size: 13px; }
 
 .requests-page { min-height: 100vh; display: grid; grid-template-columns: 310px minmax(0, 1fr); }
 .requests-sidebar { background: #e8ece5; border-right: 1px solid #d4dad2; padding: 28px 18px; overflow-y: auto; height: 100vh; position: sticky; top: 0; }

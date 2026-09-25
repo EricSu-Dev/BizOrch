@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AxiosError } from 'axios'
 
 import {
   deleteConversation,
@@ -8,7 +9,7 @@ import {
   renameConversation,
   sendAgentMessage,
 } from '../api/conversations'
-import { ChatPage } from './ChatPage'
+import { ChatPage, procurementQuickPrompt } from './ChatPage'
 
 vi.mock('../api/conversations', () => ({
   deleteConversation: vi.fn(),
@@ -190,6 +191,88 @@ describe('ChatPage', () => {
       })
     })
     expect(await screen.findByText('已受理')).toBeInTheDocument()
+  })
+
+  it('keeps an uncertain send locked until its persisted reply is confirmed', async () => {
+    const clientMessageId = '00000000-0000-4000-8000-000000000002'
+    mockedListConversations.mockResolvedValueOnce([]).mockResolvedValueOnce([{
+      conversation_id: 'conversation-1',
+      title: null,
+      scenario_key: null,
+      workflow_run_id: null,
+      status: 'OPEN',
+      message_count: 2,
+      created_at: '2026-09-25T08:00:00Z',
+      updated_at: '2026-09-25T08:01:00Z',
+    }])
+    mockedSend.mockRejectedValueOnce(new AxiosError('timeout', 'ECONNABORTED'))
+    mockedListMessages.mockResolvedValueOnce([
+      {
+        message_id: 'server-user', sequence: 1, role: 'USER',
+        content: '申请CRM只读权限30天，用于客户项目支持。',
+        client_message_id: clientMessageId, agent_result: null,
+        created_at: '2026-09-25T08:00:00Z',
+      },
+      {
+        message_id: 'server-reply', sequence: 2, role: 'ASSISTANT',
+        content: '已受理', client_message_id: null, agent_result: null,
+        created_at: '2026-09-25T08:01:00Z',
+      },
+    ])
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(clientMessageId)
+
+    render(<ChatPage />)
+    fireEvent.click(await screen.findByRole('button', { name: '申请系统权限' }))
+    fireEvent.click(screen.getByRole('button', { name: /发\s*送/ }))
+
+    expect(await screen.findByRole('button', { name: '检查处理结果' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '新建会话' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /发\s*送/ })).toBeDisabled()
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+    expect(mockedSend).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '检查处理结果' }))
+    expect(await screen.findByText('已受理')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: '检查处理结果' })).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: '新建会话' })).toBeEnabled()
+    expect(mockedSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the confirmed reply visible when the history refresh fails', async () => {
+    mockedListConversations.mockResolvedValue([])
+    mockedSend.mockResolvedValue({
+      conversation_id: 'conversation-1',
+      client_message_id: 'client-fixed',
+      agent: {
+        request_id: 'request-1', intent: 'UNKNOWN', reply: '已受理',
+        scenario_key: null, knowledge: null, scenario_summary: null,
+        workflow: null, trace: [],
+      },
+    })
+    mockedListMessages.mockRejectedValueOnce(new Error('history unavailable'))
+
+    render(<ChatPage />)
+    fireEvent.click(await screen.findByRole('button', { name: '申请系统权限' }))
+    fireEvent.click(screen.getByRole('button', { name: /发\s*送/ }))
+
+    expect(await screen.findByText('已受理')).toBeInTheDocument()
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+    expect(mockedSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not send while Enter confirms Chinese IME composition', async () => {
+    mockedListConversations.mockResolvedValue([])
+    render(<ChatPage />)
+    fireEvent.click(await screen.findByRole('button', { name: '申请系统权限' }))
+    fireEvent.keyDown(screen.getByRole('textbox'), {
+      key: 'Enter', code: 'Enter', isComposing: true, keyCode: 229,
+    })
+    expect(mockedSend).not.toHaveBeenCalled()
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('申请CRM')
+  })
+
+  it('generates a future procurement delivery date from the current day', () => {
+    expect(procurementQuickPrompt(new Date(2026, 8, 25))).toContain('期望到货日期为2026-10-02')
   })
 
   it('uses an existing demo equipment code in the maintenance quick prompt', async () => {

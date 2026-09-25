@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Dropdown, Empty, Input, Modal, Spin, Tag, message as toast } from 'antd'
+import axios from 'axios'
 
 import { publicErrorMessage } from '../api/client'
 import type {
   ConversationMessage,
   ConversationSummary,
+  ConversationTurnResult,
   KnowledgeCitation,
   MultiAgentResult,
 } from '../api/contracts'
@@ -128,6 +130,17 @@ function conversationLabel(conversation: ConversationSummary): string {
     || scenarioConversationLabel(conversation.scenario_key)
 }
 
+export function procurementQuickPrompt(now = new Date()): string {
+  const delivery = new Date(now)
+  delivery.setDate(delivery.getDate() + 7)
+  const date = [
+    delivery.getFullYear(),
+    String(delivery.getMonth() + 1).padStart(2, '0'),
+    String(delivery.getDate()).padStart(2, '0'),
+  ].join('-')
+  return `申请采购办公用品：A4打印纸2箱，类别为办公耗材，预计金额260元，使用成本中心 CC-SALES-EAST-001，期望到货日期为${date}，送到上海总部行政前台，用于新员工入职办公区补充。`
+}
+
 function CitationCard({ citation }: { citation: KnowledgeCitation }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -229,6 +242,8 @@ export function ChatPage() {
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [uncertainMessageId, setUncertainMessageId] = useState<string | null>(null)
+  const [checkingSend, setCheckingSend] = useState(false)
   const [renamingConversation, setRenamingConversation] = useState<ConversationSummary>()
   const [renameDraft, setRenameDraft] = useState('')
   const [savingTitle, setSavingTitle] = useState(false)
@@ -284,6 +299,34 @@ export function ChatPage() {
     setDraft('')
   }
 
+  const checkSendResult = async () => {
+    if (!uncertainMessageId || checkingSend) return
+    setCheckingSend(true)
+    try {
+      const items = await listConversations()
+      setConversations(items)
+      for (const item of items) {
+        const history = await listMessages(item.conversation_id)
+        const sent = history.find((message) => message.client_message_id === uncertainMessageId)
+        if (!sent) continue
+        setSelectedId(item.conversation_id)
+        setMessages(history)
+        if (history.some((message) => message.role === 'ASSISTANT' && message.sequence === sent.sequence + 1)) {
+          setUncertainMessageId(null)
+          toast.success('已从会话记录确认处理结果')
+        } else {
+          toast.info('消息已保存，仍在处理中，请稍后再检查')
+        }
+        return
+      }
+      toast.warning('暂未查到处理结果，请稍后再检查，勿重复发送')
+    } catch (error) {
+      toast.error(publicErrorMessage(error))
+    } finally {
+      setCheckingSend(false)
+    }
+  }
+
   const openRename = (conversation: ConversationSummary) => {
     setRenamingConversation(conversation)
     setRenameDraft(conversationLabel(conversation))
@@ -329,7 +372,7 @@ export function ChatPage() {
 
   const send = async () => {
     const content = draft.trim()
-    if (!content || sending) return
+    if (!content || sending || uncertainMessageId) return
     setSending(true)
     setDraft('')
     const clientMessageId = crypto.randomUUID()
@@ -343,22 +386,47 @@ export function ChatPage() {
       created_at: new Date().toISOString(),
     }
     setMessages((current) => [...current, optimistic])
+    let result: ConversationTurnResult
     try {
-      const result = await sendAgentMessage({
+      result = await sendAgentMessage({
         message: content,
         clientMessageId,
         conversationId: selectedId,
       })
-      setSelectedId(result.conversation_id)
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined
+      if (status && [400, 401, 403, 404, 422].includes(status)) {
+        setDraft(content)
+        setMessages((current) => current.filter((item) => item.message_id !== clientMessageId))
+        toast.error(publicErrorMessage(error))
+      } else {
+        setUncertainMessageId(clientMessageId)
+        toast.warning('发送结果尚未确认，请检查会话记录，勿重复发送')
+      }
+      setSending(false)
+      return
+    }
+    setSelectedId(result.conversation_id)
+    setMessages((current) => [...current, {
+      message_id: `pending-reply-${clientMessageId}`,
+      sequence: optimistic.sequence + 1,
+      role: 'ASSISTANT',
+      content: result.agent.reply,
+      client_message_id: null,
+      agent_result: result.agent,
+      created_at: new Date().toISOString(),
+    }])
+    try {
       setMessages(await listMessages(result.conversation_id))
+    } catch (error) {
+      toast.warning(`消息已受理，但消息记录刷新失败：${publicErrorMessage(error)}`)
+    }
+    try {
       await refreshConversations(result.conversation_id)
     } catch (error) {
-      setDraft(content)
-      setMessages((current) => current.filter((item) => item.message_id !== clientMessageId))
-      toast.error(publicErrorMessage(error))
-    } finally {
-      setSending(false)
+      toast.warning(`消息已受理，但会话列表刷新失败：${publicErrorMessage(error)}`)
     }
+    setSending(false)
   }
 
   return (
@@ -369,7 +437,7 @@ export function ChatPage() {
           <span className="eyebrow">CONVERSATIONS</span>
           <h2>服务会话</h2>
         </div>
-        <Button type="primary" block onClick={newConversation}>新建会话</Button>
+        <Button type="primary" block onClick={newConversation} disabled={Boolean(uncertainMessageId)}>新建会话</Button>
         <div className="conversation-list">
           {conversations.map((conversation) => {
             const label = conversationLabel(conversation)
@@ -441,7 +509,7 @@ export function ChatPage() {
                 <button type="button" onClick={() => setDraft('设备 PRESS-001 出现异常振动，今天 10:30 发现，生产速度下降，暂未发现明显安全风险，请安排维修。')}>发起设备报修</button>
                 <button type="button" onClick={() => setDraft('VPN权限需要经过谁审批？')}>查询审批制度</button>
                 {canRequestProcurement && (
-                  <button type="button" onClick={() => setDraft('申请采购办公用品：A4打印纸2箱，类别为办公耗材，预计金额260元，使用成本中心 CC-SALES-EAST-001，期望到货日期为2026-08-05，送到上海总部行政前台，用于新员工入职办公区补充。')}>申请办公采购</button>
+                  <button type="button" onClick={() => setDraft(procurementQuickPrompt())}>申请办公采购</button>
                 )}
                 {canManageEmployeeLifecycle && (
                   <>
@@ -456,6 +524,10 @@ export function ChatPage() {
             messages.map((item) => <MessageBubble key={item.message_id} item={item} />)
           )}
           {sending && <div className="assistant-thinking"><Spin size="small" /> 正在理解并核对企业信息…</div>}
+          {uncertainMessageId && <div className="send-uncertain" role="status">
+            这条消息的处理结果尚未确认。请勿重复发送。
+            <Button type="link" loading={checkingSend} onClick={() => void checkSendResult()}>检查处理结果</Button>
+          </div>}
         </div>
 
         <footer className="composer">
@@ -463,18 +535,18 @@ export function ChatPage() {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onPressEnter={(event) => {
-              if (!event.shiftKey) {
+              if (!event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
                 event.preventDefault()
                 void send()
               }
             }}
             autoSize={{ minRows: 2, maxRows: 5 }}
             placeholder="描述你的需求，Enter发送，Shift + Enter换行"
-            disabled={sending}
+            disabled={sending || Boolean(uncertainMessageId)}
           />
           <div className="composer-actions">
             <span>AI只提出方案，审批和执行由确定性规则控制</span>
-            <Button type="primary" onClick={() => void send()} loading={sending} disabled={!draft.trim()}>
+            <Button type="primary" onClick={() => void send()} loading={sending} disabled={!draft.trim() || Boolean(uncertainMessageId)}>
               发送
             </Button>
           </div>
