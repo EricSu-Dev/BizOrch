@@ -8,6 +8,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.actions.activity import ExecutionActivityRegistry
 from app.actions.contracts import (
     ActionGatewayOutcome,
     ActionGatewayResult,
@@ -395,8 +396,32 @@ class ProcurementPlanExecutionService:
     ) -> None:
         self._session_factory = session_factory
         self._gateway = gateway
+        self._activity = ExecutionActivityRegistry()
+
+    def is_active(self, workflow_run_id: str) -> bool:
+        return self._activity.is_active(workflow_run_id)
 
     def execute(
+        self,
+        *,
+        workflow_run_id: str,
+        expected_workflow_version: int,
+        plan_id: str,
+        plan_version: int,
+        approval_id: str,
+        actor_id: str,
+    ) -> ProcurementExecutionResult:
+        with self._activity.claim(workflow_run_id):
+            return self._execute_once(
+                workflow_run_id=workflow_run_id,
+                expected_workflow_version=expected_workflow_version,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                approval_id=approval_id,
+                actor_id=actor_id,
+            )
+
+    def _execute_once(
         self,
         *,
         workflow_run_id: str,
@@ -534,4 +559,49 @@ class ProcurementPlanExecutionService:
             workflow_state=workflow.workflow_state,
             workflow_version=workflow.version,
             human_review_reason=reason,
+        )
+
+    def recover_interrupted_execution(
+        self,
+        *,
+        workflow_run_id: str,
+        plan_id: str,
+        plan_version: int,
+    ) -> ProcurementExecutionResult:
+        """Record an in-flight procurement write as result-unknown for review."""
+        self._activity.require_inactive(workflow_run_id)
+        with self._session_factory.begin() as session:
+            workflows = WorkflowRepository(session)
+            workflow = workflows.get(workflow_run_id)
+            if workflow.workflow_state is WorkflowState.EXECUTING:
+                record = ActionPlanRepository(session).get_record(plan_id, plan_version)
+                executing_steps = [
+                    step
+                    for step in record.steps
+                    if ActionPlanStepStatus(step.status)
+                    is ActionPlanStepStatus.EXECUTING
+                ]
+                if len(executing_steps) != 1:
+                    raise ActionPlanVersionError(
+                        "interrupted procurement execution has no unique active step"
+                    )
+                step = executing_steps[0]
+                return self._require_human(
+                    workflow_run_id,
+                    workflow.version,
+                    plan_id,
+                    plan_version,
+                    step.step_id,
+                    "INTERRUPTED_EXECUTION_REQUIRES_RECONCILIATION",
+                    ActionPlanStepStatus.RESULT_UNKNOWN,
+                )
+            if workflow.workflow_state is not WorkflowState.WAITING_HUMAN:
+                raise ActionPlanVersionError(
+                    "workflow is not an interrupted procurement execution"
+                )
+        return ProcurementExecutionResult(
+            workflow_run_id=workflow.id,
+            workflow_state=workflow.workflow_state,
+            workflow_version=workflow.version,
+            human_review_reason="INTERRUPTED_EXECUTION_REQUIRES_RECONCILIATION",
         )

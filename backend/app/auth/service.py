@@ -121,17 +121,37 @@ class AuthService:
         username: str,
         password: str,
         roles: frozenset[RoleName],
+        reset_existing_credentials: bool = False,
     ) -> AuthPrincipal:
-        """Create one seed user, or verify an existing identity is compatible."""
+        """Create one seed user, or reconcile an existing demo identity."""
         normalized_employee = employee_id.strip()
         normalized_username = username.strip().lower()
-        with self._session_factory() as session:
+        with self._session_factory.begin() as session:
             repository = AuthRepository(session)
             existing = repository.find_user_by_employee_id(normalized_employee)
             if existing is not None:
                 principal = self._principal(existing)
                 if principal.roles != roles:
                     raise UserAlreadyExistsError(normalized_username)
+                if reset_existing_credentials:
+                    username_owner = repository.find_user_by_username(
+                        normalized_username
+                    )
+                    if (
+                        username_owner is not None
+                        and username_owner.id != existing.id
+                    ):
+                        raise UserAlreadyExistsError(normalized_username)
+                    repository.update_login_credentials(
+                        existing,
+                        username=normalized_username,
+                        password_hash=self._password_hasher.hash(password),
+                    )
+                    repository.revoke_all_sessions(
+                        user_id=existing.id,
+                        revoked_at=datetime.now(UTC),
+                    )
+                    return self._principal(existing)
                 return principal
             username_owner = repository.find_user_by_username(normalized_username)
             if username_owner is not None:

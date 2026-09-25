@@ -67,6 +67,10 @@ from app.workflow.repository import (
     WorkflowNotFoundError,
     WorkflowVersionConflictError,
 )
+from app.workflow.human_review import (
+    HumanReviewConflictError,
+    HumanReviewValidationError,
+)
 from app.conversations.repository import (
     ConversationActorMismatchError,
     ConversationMessageConflictError,
@@ -211,6 +215,7 @@ def register_exception_handlers(application: FastAPI) -> None:
         return _response(404, "RESOURCE_NOT_FOUND", "requested resource was not found")
 
     @application.exception_handler(WorkflowVersionConflictError)
+    @application.exception_handler(HumanReviewConflictError)
     @application.exception_handler(ApprovalConflictError)
     @application.exception_handler(AccessWorkflowResumeError)
     @application.exception_handler(ApprovalCheckpointError)
@@ -231,6 +236,12 @@ def register_exception_handlers(application: FastAPI) -> None:
         exc: Exception,
     ) -> JSONResponse:
         return _response(422, "VALIDATION_ERROR", "evaluation command is invalid")
+
+    @application.exception_handler(HumanReviewValidationError)
+    async def handle_human_review_validation(
+        request: Request, exc: HumanReviewValidationError,
+    ) -> JSONResponse:
+        return _response(422, "VALIDATION_ERROR", str(exc))
 
     @application.exception_handler(KnowledgeDocumentConflictError)
     async def handle_knowledge_version_conflict(

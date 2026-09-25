@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.actions.activity import ExecutionActivityRegistry
 from app.actions.contracts import (
     ActionGatewayOutcome,
     ActionGatewayResult,
@@ -770,8 +771,32 @@ class EmployeeLifecyclePlanExecutionService:
     ) -> None:
         self._session_factory = session_factory
         self._gateway = gateway
+        self._activity = ExecutionActivityRegistry()
+
+    def is_active(self, workflow_run_id: str) -> bool:
+        return self._activity.is_active(workflow_run_id)
 
     def execute(
+        self,
+        *,
+        workflow_run_id: str,
+        expected_workflow_version: int,
+        plan_id: str,
+        plan_version: int,
+        approval_id: str,
+        actor_id: str,
+    ) -> EmployeeLifecycleExecutionResult:
+        with self._activity.claim(workflow_run_id):
+            return self._execute_once(
+                workflow_run_id=workflow_run_id,
+                expected_workflow_version=expected_workflow_version,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                approval_id=approval_id,
+                actor_id=actor_id,
+            )
+
+    def _execute_once(
         self,
         *,
         workflow_run_id: str,

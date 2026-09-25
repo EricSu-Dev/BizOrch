@@ -63,6 +63,8 @@ def test_each_process_receives_only_its_required_secret_classes() -> None:
         "TZ",
         "ENTERPRISE_OPS_BASE_URL",
         "ENTERPRISE_INTERNAL_TOKEN",
+        "BIZORCH_MCP_READ_TOKEN",
+        "BIZORCH_MCP_ACTION_GATEWAY_TOKEN",
     }
     assert set(enterprise_environment) == {
         "TZ",

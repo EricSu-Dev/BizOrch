@@ -76,6 +76,7 @@ from app.scenarios.procurement.policy import (
 from app.tickets.service import TicketProjectionService
 from app.workflow.checkpoint import SqliteCheckpointStore
 from app.workflow.query import WorkflowProgressQueryService
+from app.workflow.human_review import HumanReviewService
 from app.conversations.service import ConversationService
 
 
@@ -91,6 +92,7 @@ class ApplicationRuntime:
     procurement_requests: ProcurementRequestCommandService
     tickets: TicketProjectionService
     workflow_progress: WorkflowProgressQueryService
+    human_review: HumanReviewService
     approval_workbench: ApprovalWorkbenchService
     approval_decisions: ApprovalDecisionDispatcher
     knowledge: KnowledgeService
@@ -113,13 +115,22 @@ def build_runtime(settings: Settings) -> ApplicationRuntime:
         workflow, checkpoint_store = build_access_workflow(
             session_factory,
             mcp_endpoint=settings.enterprise_ops_mcp_url,
+            mcp_read_token=settings.enterprise_ops_mcp_read_token.get_secret_value(),
+            mcp_action_gateway_token=(
+                settings.enterprise_ops_mcp_action_gateway_token.get_secret_value()
+            ),
             checkpoint_path=settings.checkpoint_path,
         )
         full_client, read_only_client = build_mcp_enterprise_clients(
-            settings.enterprise_ops_mcp_url
+            settings.enterprise_ops_mcp_url,
+            read_token=settings.enterprise_ops_mcp_read_token.get_secret_value(),
+            action_gateway_token=(
+                settings.enterprise_ops_mcp_action_gateway_token.get_secret_value()
+            ),
         )
         tickets = TicketProjectionService(session_factory)
         workflow_progress = WorkflowProgressQueryService(session_factory)
+        human_review = HumanReviewService(session_factory, tickets)
         context_resolver = AccessRequestContextResolver(read_only_client)
         commands = AccessRequestCommandService(
             workflow,
@@ -237,6 +248,7 @@ def build_runtime(settings: Settings) -> ApplicationRuntime:
             procurement_requests=procurement_commands,
             tickets=tickets,
             workflow_progress=workflow_progress,
+            human_review=human_review,
             approval_workbench=approval_workbench,
             approval_decisions=approval_decisions,
             knowledge=knowledge,

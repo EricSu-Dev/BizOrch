@@ -112,6 +112,30 @@ describe('RequestsPage', () => {
     expect(mockedGet).not.toHaveBeenCalled()
   })
 
+  it('shows the public human review conclusion in the requester timeline', async () => {
+    const reviewedTicket: Ticket = {
+      ...waitingTicket,
+      status: 'RESOLVED',
+      workflow_state: 'COMPLETED',
+      events: [
+        ...waitingTicket.events,
+        {
+          sequence: 3,
+          event_type: 'HUMAN_REVIEW_CONCLUDED',
+          from_status: 'HUMAN_REVIEW',
+          to_status: 'RESOLVED',
+          payload: { workflow_payload: { public_summary: '已通过外部系统记录人工核实操作生效。' } },
+          created_at: '2026-09-24T08:00:00Z',
+        },
+      ],
+    }
+    mockedList.mockResolvedValue([reviewedTicket])
+    mockedGet.mockResolvedValue(reviewedTicket)
+    renderPage('/requests/bc59b288-1111-4222-8333-12345654dee4')
+    expect(await screen.findByText('已通过外部系统记录人工核实操作生效。')).toBeInTheDocument()
+    expect(screen.getByText('人工核对已结案')).toBeInTheDocument()
+  })
+
   it('distinguishes an equipment maintenance request from access management', async () => {
     const equipmentTicket: Ticket = {
       ...waitingTicket,

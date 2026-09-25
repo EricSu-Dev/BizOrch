@@ -280,6 +280,15 @@ class ProcurementRequestCommandService:
             workflow = WorkflowRepository(session).get(
                 checkpoint.workflow_run_id
             )
+            if workflow.workflow_state is WorkflowState.EXECUTING:
+                if self._execution_service.is_active(checkpoint.workflow_run_id):
+                    return
+                self._execution_service.recover_interrupted_execution(
+                    workflow_run_id=checkpoint.workflow_run_id,
+                    plan_id=checkpoint.action_plan_id,
+                    plan_version=checkpoint.action_plan_version,
+                )
+                return
             if workflow.workflow_state is not WorkflowState.RUNNING:
                 return
             expected_version = workflow.version

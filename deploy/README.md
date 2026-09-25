@@ -12,6 +12,12 @@
 
 只有 API 发布到宿主机回环地址。MCP 与模拟企业系统只存在于内部网络，知识和评测 Worker 无法连接 MCP 写入口。
 
+### 当前线上发布（2026-09-24）
+
+阿里云首尔服务器已运行 `2026.09.24-1`：API、MCP 和知识索引 Worker 使用此版镜像；模拟企业系统沿用 `2026.07.28-1`。实际部署根目录是 `/opt/bizorch`，前端版本目录是 `/www/wwwroot/bizorch.nexmart.tech/releases/2026.09.24-1`，`current` 软链接指向该版本。公开入口为 `https://bizorch.nexmart.tech`。发布前备份保存在 `/opt/bizorch/backups/pre-2026.09.24-1`，包含两套 MySQL 数据库、旧配置与停止写入后归档的 Chroma、checkpoint 和上传文件。
+
+线上 API、MCP、企业模拟系统健康检查通过；前端和公开 API 返回 200；普通员工访问人工核对接口返回 403，运营账号返回 200；容器内挂载目录可读写。空闲观测约有 490 MiB 可用内存，1 GiB swap 已用满。知识入库与完整 Agent 流程的资源峰值、容器重启后的状态恢复、实际切换旧版本回滚仍待验证。该演示站公开展示六个演示身份并自动填入保留的旧统一密码 `123456`，仅承载模拟业务数据。新建或重置演示凭证时，种子脚本仍要求至少 8 位密码；本次发布未重置已有账号。
+
 ## 0. 部署前条件
 
 - Linux 已安装 Docker Engine 与 Docker Compose v2；
@@ -65,6 +71,8 @@ Compose 读取同一个 `/opt/bizorch/.env` 做变量插值，但 `compose.yaml`
 第一个脚本构建 API、模拟企业系统和 MCP 三个 Linux 镜像。将镜像推送到私有仓库，或用 `docker save` / `docker load` 传到服务器。生产 Compose 只有 `image`，没有 `build`；`deploy.sh` 使用 `--no-build`，不会在 2GB 服务器临时安装编译依赖。
 
 第二个脚本导出 React 静态文件。把产物放入 `/var/www/bizorch/releases/<release-id>/`，再将 `current` 符号链接切到该版本。生产机不运行 Vite。
+
+正式构建默认不显示演示账号及统一密码。仅在隔离的公开演示环境确实需要时，显式设置 `BIZORCH_PUBLIC_DEMO_MODE=true` 和 `BIZORCH_PUBLIC_DEMO_PASSWORD` 后运行前端发布脚本；该密码会出现在公开页面，不能用于任何真实身份。后端演示账号脚本在非开发环境需要 `--allow-production-demo-seed` 和不少于 8 位的 `BIZORCH_DEMO_PASSWORD`，且只有另加 `--reset-existing-credentials` 才会重置已存在账号及会话。
 
 如果从当前 Windows 开发机通过文件上传交付，而不是使用镜像仓库，在本地镜像和前端产物均验证通过后运行：
 

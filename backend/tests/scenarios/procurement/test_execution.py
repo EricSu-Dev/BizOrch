@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,6 +28,7 @@ from app.scenarios.procurement.composition import (
 from app.scenarios.procurement.policy import ProcurementPolicyEngine
 from app.tickets.service import TicketProjectionService
 from app.workflow.checkpoint import SqliteCheckpointStore
+from app.workflow.repository import WorkflowRepository
 from app.workflow.state import WorkflowState
 from tests.scenarios.procurement.test_context import FakeProcurementClient
 from tests.scenarios.procurement.test_policy import (
@@ -139,6 +141,15 @@ class FakeProcurementWriteClient(FakeProcurementClient):
         )
 
 
+class ProcessTerminated(BaseException):
+    pass
+
+
+class CrashingGateway:
+    def execute(self, *args, **kwargs):
+        raise ProcessTerminated("process terminated during procurement execution")
+
+
 def build_commands(tmp_path, client: FakeProcurementWriteClient):
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'platform.db'}")
     Base.metadata.create_all(engine)
@@ -196,6 +207,34 @@ def test_final_approval_executes_atomic_write_and_completes_workflow(
     assert client.reservation.status == "ACTIVE"
     assert client.cost_center is not None
     assert client.cost_center.reserved_amount == Decimal("7600.00")
+
+
+def test_interrupted_procurement_execution_requires_human_reconciliation(
+    tmp_path,
+) -> None:
+    client = FakeProcurementWriteClient()
+    commands, sessions, store = build_commands(tmp_path, client)
+    commands._execution_service._gateway = CrashingGateway()
+    try:
+        with pytest.raises(ProcessTerminated, match="process terminated"):
+            approve_one_stage(commands)
+        workflow_run_id = "procurement-execution"
+        with sessions() as session:
+            assert (
+                WorkflowRepository(session)
+                .get(workflow_run_id)
+                .workflow_state
+                is WorkflowState.EXECUTING
+            )
+        checkpoint = commands._approval_checkpoint.snapshot(workflow_run_id)
+        result = commands.resume_recorded_approval(
+            workflow_run_id=workflow_run_id,
+            approval_sequence_id=checkpoint.approval_sequence_id,
+        )
+        assert result.workflow_state is WorkflowState.WAITING_HUMAN
+        assert client.request is None
+    finally:
+        store.close()
 
 
 def test_timeout_after_enterprise_commit_is_reconciled_without_second_write(

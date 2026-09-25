@@ -37,6 +37,9 @@ const AccountSettingsPage = lazy(() =>
 const EvaluationPage = lazy(() =>
   import('../pages/EvaluationPage').then((module) => ({ default: module.EvaluationPage })),
 )
+const HumanReviewsPage = lazy(() =>
+  import('../pages/HumanReviewsPage').then((module) => ({ default: module.HumanReviewsPage })),
+)
 
 export function App() {
   const initialize = useAuthStore((state) => state.initialize)
@@ -77,6 +80,7 @@ export function App() {
               <Route element={<EvaluationManagerRoute />}>
                 <Route path="/evaluations" element={<EvaluationPage />} />
                 <Route path="/evaluations/:runId" element={<EvaluationPage />} />
+                <Route path="/human-reviews" element={<HumanReviewsPage />} />
               </Route>
               <Route path="/" element={<Navigate to="/service" replace />} />
             </Route>

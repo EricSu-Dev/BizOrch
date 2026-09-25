@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Any, Protocol
 
 import anyio
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from pydantic import JsonValue, ValidationError
@@ -51,13 +52,22 @@ class McpToolCaller(Protocol):
 class StreamableHttpMcpToolCaller:
     """Synchronous facade over the official asynchronous streamable HTTP client."""
 
-    def __init__(self, endpoint: str, *, timeout_seconds: float = 10.0) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        bearer_token: str,
+        timeout_seconds: float = 10.0,
+    ) -> None:
         self._endpoint = endpoint
+        self._bearer_token = bearer_token
         self._timeout_seconds = timeout_seconds
         if not endpoint.strip():
             raise ValueError("MCP endpoint must not be blank")
         if timeout_seconds <= 0:
             raise ValueError("MCP timeout_seconds must be positive")
+        if not bearer_token.strip():
+            raise ValueError("MCP bearer_token must not be blank")
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return anyio.run(self._call_tool_async, name, arguments)
@@ -66,18 +76,20 @@ class StreamableHttpMcpToolCaller:
         self, name: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
         try:
-            async with streamable_http_client(self._endpoint) as (
-                read_stream,
-                write_stream,
-                _,
-            ):
-                async with ClientSession(
-                    read_stream,
-                    write_stream,
-                    read_timeout_seconds=timedelta(seconds=self._timeout_seconds),
-                ) as session:
-                    await session.initialize()
-                    result = await session.call_tool(name, arguments)
+            async with httpx.AsyncClient(
+                headers={"Authorization": f"Bearer {self._bearer_token}"}
+            ) as http_client:
+                async with streamable_http_client(
+                    self._endpoint,
+                    http_client=http_client,
+                ) as (read_stream, write_stream, _):
+                    async with ClientSession(
+                        read_stream,
+                        write_stream,
+                        read_timeout_seconds=timedelta(seconds=self._timeout_seconds),
+                    ) as session:
+                        await session.initialize()
+                        result = await session.call_tool(name, arguments)
         except Exception as exc:
             raise McpToolInvocationError(
                 f"MCP tool {name} did not return a trustworthy result"

@@ -268,6 +268,26 @@ class AccessRequestWorkflow:
                 actor_id=actor_id,
                 decision=decision,
             )
+        if (
+            "execute" in current.next_nodes
+            and current.workflow_state is WorkflowState.EXECUTING
+        ):
+            if current.approval_id != approval_id:
+                raise AccessWorkflowResumeError("approval does not match checkpoint")
+            with self._session_factory() as session:
+                status, _ = self._validate_recorded_decision(
+                    session,
+                    workflow_run_id=workflow_run_id,
+                    approval_id=approval_id,
+                    actor_id=actor_id,
+                    decision=decision,
+                )
+            if status is not ApprovalStatus.APPROVED:
+                raise AccessWorkflowResumeError("execution has no approved decision")
+            if self._execution_service.is_active(workflow_run_id):
+                return current
+            self._recover_interrupted_execution(workflow_run_id)
+            return self.snapshot(workflow_run_id)
         if self.AWAIT_APPROVAL_NODE not in current.next_nodes:
             raise AccessWorkflowResumeError(
                 f"workflow {workflow_run_id} is not waiting for approval"
@@ -320,6 +340,20 @@ class AccessRequestWorkflow:
         current = self.snapshot(workflow_run_id)
         if not current.checkpoint_pending:
             return current
+        if (
+            "execute" in current.next_nodes
+            and current.workflow_state is WorkflowState.EXECUTING
+        ):
+            if current.approval_id != approval_id:
+                raise AccessWorkflowResumeError("approval does not match checkpoint")
+            with self._session_factory() as session:
+                task = ApprovalRepository(session).get(approval_id)
+                if task.approval_status is not ApprovalStatus.APPROVED:
+                    raise AccessWorkflowResumeError("execution has no approved decision")
+            if self._execution_service.is_active(workflow_run_id):
+                return current
+            self._recover_interrupted_execution(workflow_run_id)
+            return self.snapshot(workflow_run_id)
         if self.AWAIT_APPROVAL_NODE not in current.next_nodes:
             raise AccessWorkflowResumeError(
                 f"workflow {workflow_run_id} is not waiting for approval"
@@ -529,17 +563,24 @@ class AccessRequestWorkflow:
         return "end"
 
     def _execute(self, state: AccessRequestGraphState) -> AccessRequestGraphState:
-        result = self._execution_service.execute(
-            workflow_run_id=state["workflow_run_id"],
-            expected_workflow_version=state["workflow_version"],
-            action_id=state["action_id"],
-            action_version=state["action_version"],
-            approval_id=state["approval_id"],
-            actor_id=self._action_executor_id,
-            idempotency_key=(
-                f"grant:{state['action_id']}:v{state['action_version']}"
-            ),
-        )
+        with self._session_factory() as session:
+            workflow = WorkflowRepository(session).get(state["workflow_run_id"])
+        if workflow.workflow_state is WorkflowState.EXECUTING:
+            result = self._execution_service.recover_interrupted_execution(
+                workflow_run_id=state["workflow_run_id"]
+            )
+        else:
+            result = self._execution_service.execute(
+                workflow_run_id=state["workflow_run_id"],
+                expected_workflow_version=state["workflow_version"],
+                action_id=state["action_id"],
+                action_version=state["action_version"],
+                approval_id=state["approval_id"],
+                actor_id=self._action_executor_id,
+                idempotency_key=(
+                    f"grant:{state['action_id']}:v{state['action_version']}"
+                ),
+            )
         update: AccessRequestGraphState = {
             "workflow_state": result.workflow_state.value,
             "workflow_version": result.workflow_version,
@@ -653,6 +694,10 @@ class AccessRequestWorkflow:
             Command(resume=payload.model_dump(mode="json")),
             config=self._config(workflow_run_id),
         )
+
+    def _recover_interrupted_execution(self, workflow_run_id: str) -> None:
+        """Advance the persisted execute node without reissuing its write."""
+        self._graph.invoke(None, config=self._config(workflow_run_id))
 
     def _require_matching_final_decision(
         self,

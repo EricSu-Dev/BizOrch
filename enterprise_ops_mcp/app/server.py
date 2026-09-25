@@ -1,8 +1,14 @@
 """FastMCP server exposing the explicit BizOrch enterprise tool allowlist."""
 
 import os
+import secrets
+from collections.abc import Callable
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings
 
 from app.integrations.enterprise_ops import (
     EnterpriseOpsHttpClient,
@@ -10,8 +16,109 @@ from app.integrations.enterprise_ops import (
 )
 
 
-def create_server(client: EnterpriseOpsHttpClient) -> FastMCP:
+_READ_SCOPE = "mcp.read"
+_ACTION_GATEWAY_SCOPE = "bizorch.action_gateway"
+_DEVELOPMENT_READ_TOKEN = "bizorch-development-mcp-read-token"
+_DEVELOPMENT_ACTION_GATEWAY_TOKEN = "bizorch-development-mcp-action-gateway-token"
+
+
+class StaticMcpTokenVerifier:
+    """Verify the two internal MCP credentials without exposing write capability."""
+
+    def __init__(self, *, read_token: str, action_gateway_token: str) -> None:
+        if not read_token.strip() or not action_gateway_token.strip():
+            raise ValueError("MCP read and Action Gateway tokens must not be blank")
+        if read_token == action_gateway_token:
+            raise ValueError("MCP read and Action Gateway tokens must differ")
+        self._read_token = read_token
+        self._action_gateway_token = action_gateway_token
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if secrets.compare_digest(token, self._read_token):
+            return AccessToken(
+                token=token,
+                client_id="bizorch-read-client",
+                scopes=[_READ_SCOPE],
+            )
+        if secrets.compare_digest(token, self._action_gateway_token):
+            return AccessToken(
+                token=token,
+                client_id="bizorch-action-gateway",
+                scopes=[_READ_SCOPE, _ACTION_GATEWAY_SCOPE],
+            )
+        return None
+
+
+def _require_action_gateway_scope() -> None:
+    token = get_access_token()
+    if token is None or _ACTION_GATEWAY_SCOPE not in token.scopes:
+        raise PermissionError("MCP write tools require the Action Gateway credential")
+
+
+class _GatewayOnlyWriteClient:
+    """Central guard that prevents a new write tool from bypassing MCP capability checks."""
+
+    _WRITE_METHODS = frozenset(
+        {
+            "create_procurement_request_and_reserve_budget",
+            "create_pending_employee",
+            "create_disabled_corporate_account",
+            "assign_baseline_access_package",
+            "create_asset_assignment_task",
+            "activate_employee_and_account",
+            "update_employee_assignment",
+            "revoke_obsolete_baseline_access",
+            "grant_target_baseline_access",
+            "create_asset_adjustment_task",
+            "verify_employee_transfer_consistency",
+            "disable_corporate_account",
+            "revoke_all_employee_access",
+            "create_asset_return_task",
+            "mark_employee_inactive",
+            "verify_employee_offboarding_consistency",
+            "create_access_request",
+            "grant_application_access",
+            "create_maintenance_work_order",
+        }
+    )
+
+    def __init__(
+        self,
+        client: EnterpriseOpsHttpClient,
+        *,
+        write_authorizer: Callable[[], None],
+    ) -> None:
+        self._client = client
+        self._write_authorizer = write_authorizer
+
+    def __getattr__(self, name: str) -> Any:
+        method = getattr(self._client, name)
+        if name not in self._WRITE_METHODS:
+            return method
+
+        def guarded(*args: object, **kwargs: object) -> Any:
+            self._write_authorizer()
+            return method(*args, **kwargs)
+
+        return guarded
+
+
+def create_server(
+    client: EnterpriseOpsHttpClient,
+    *,
+    token_verifier: StaticMcpTokenVerifier | None = None,
+    allow_test_write_access: bool = False,
+) -> FastMCP:
     """Create one server with explicit read tools and controlled write tools."""
+    if token_verifier is not None and allow_test_write_access:
+        raise ValueError("test write bypass cannot be combined with MCP authentication")
+    protected_client = _GatewayOnlyWriteClient(
+        client,
+        write_authorizer=(lambda: None)
+        if allow_test_write_access
+        else _require_action_gateway_scope,
+    )
+    client = protected_client  # type: ignore[assignment]
     server = FastMCP(
         name="enterprise-ops-mcp",
         instructions=(
@@ -24,6 +131,16 @@ def create_server(client: EnterpriseOpsHttpClient) -> FastMCP:
         streamable_http_path="/mcp",
         stateless_http=True,
         json_response=True,
+        token_verifier=token_verifier,
+        auth=(
+            AuthSettings(
+                issuer_url="https://bizorch.internal/mcp-auth",
+                resource_server_url="https://enterprise-ops-mcp.internal/mcp",
+                required_scopes=[_READ_SCOPE],
+            )
+            if token_verifier is not None
+            else None
+        ),
     )
 
     @server.tool(
@@ -897,6 +1014,15 @@ def create_runtime_server() -> FastMCP:
         "BIZORCH_ENTERPRISE_OPS_BASE_URL", ""
     )
     internal_token = os.getenv("ENTERPRISE_INTERNAL_TOKEN", "")
+    local_development = base_url.startswith(
+        ("http://127.0.0.1", "http://localhost")
+    )
+    read_token = os.getenv("BIZORCH_MCP_READ_TOKEN", "") or (
+        _DEVELOPMENT_READ_TOKEN if local_development else ""
+    )
+    action_gateway_token = os.getenv("BIZORCH_MCP_ACTION_GATEWAY_TOKEN", "") or (
+        _DEVELOPMENT_ACTION_GATEWAY_TOKEN if local_development else ""
+    )
     if not base_url.strip():
         raise RuntimeError(
             "ENTERPRISE_OPS_BASE_URL or BIZORCH_ENTERPRISE_OPS_BASE_URL "
@@ -904,12 +1030,20 @@ def create_runtime_server() -> FastMCP:
         )
     if not internal_token:
         raise RuntimeError("ENTERPRISE_INTERNAL_TOKEN must be configured")
+    if not read_token:
+        raise RuntimeError("BIZORCH_MCP_READ_TOKEN must be configured")
+    if not action_gateway_token:
+        raise RuntimeError("BIZORCH_MCP_ACTION_GATEWAY_TOKEN must be configured")
     return create_server(
         EnterpriseOpsHttpClient(
             base_url,
             internal_token=internal_token,
             timeout_seconds=5,
-        )
+        ),
+        token_verifier=StaticMcpTokenVerifier(
+            read_token=read_token,
+            action_gateway_token=action_gateway_token,
+        ),
     )
 
 

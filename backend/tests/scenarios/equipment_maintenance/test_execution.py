@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,6 +26,7 @@ from app.scenarios.equipment_maintenance.composition import (
 )
 from app.tickets.service import TicketProjectionService
 from app.workflow.checkpoint import SqliteCheckpointStore
+from app.workflow.repository import WorkflowRepository
 from app.workflow.state import WorkflowState
 from tests.scenarios.equipment_maintenance.test_commands import complete_draft
 from tests.scenarios.equipment_maintenance.test_policy import context
@@ -100,6 +102,11 @@ class FakeMaintenanceEnterpriseClient:
         return order
 
 
+class CrashingGateway:
+    def execute(self, *args, **kwargs):
+        raise RuntimeError("process terminated during maintenance execution")
+
+
 def build_commands(tmp_path, client: FakeMaintenanceEnterpriseClient):
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'business.db'}")
     Base.metadata.create_all(engine)
@@ -158,6 +165,45 @@ def test_approved_maintenance_executes_once_and_verifies_readback(tmp_path) -> N
             idem = session.scalar(select(IdempotencyRecord))
             assert idem is not None
             assert idem.status == IdempotencyStatus.SUCCEEDED.value
+    finally:
+        store.close()
+
+
+def test_interrupted_maintenance_execution_requires_human_reconciliation(
+    tmp_path,
+) -> None:
+    client = FakeMaintenanceEnterpriseClient()
+    sessions, commands, store = build_commands(tmp_path, client)
+    commands._execution_service._gateway = CrashingGateway()
+    try:
+        waiting = commands.create(
+            complete_draft(),
+            context=context(),
+            actor_id="EMP-2001",
+            run_id="maintenance-interrupted",
+        )
+        with pytest.raises(RuntimeError, match="process terminated"):
+            commands.decide(
+                workflow_run_id=waiting.workflow_run_id,
+                approval_id=waiting.approval_id or "",
+                expected_workflow_version=waiting.workflow_version,
+                actor_id="EMP-MAINT-MANAGER",
+                decision=ApprovalDecisionType.APPROVE,
+            )
+        with sessions() as session:
+            assert (
+                WorkflowRepository(session)
+                .get(waiting.workflow_run_id)
+                .workflow_state
+                is WorkflowState.EXECUTING
+            )
+
+        result = commands.resume_recorded_approval(
+            workflow_run_id=waiting.workflow_run_id,
+            approval_id=waiting.approval_id or "",
+        )
+        assert result.workflow_state is WorkflowState.WAITING_HUMAN
+        assert client.write_calls == 0
     finally:
         store.close()
 

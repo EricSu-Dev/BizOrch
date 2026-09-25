@@ -30,22 +30,42 @@ from app.workflow.checkpoint import SqliteCheckpointStore
 
 def build_mcp_enterprise_clients(
     mcp_endpoint: str,
+    *,
+    read_token: str,
+    action_gateway_token: str,
 ) -> tuple[EnterpriseOpsMcpClient, ReadOnlyEnterpriseOpsMcpClient]:
-    """Return separate full and read-only capabilities over one MCP transport."""
+    """Return separately authenticated write and read MCP capabilities."""
     full_client = EnterpriseOpsMcpClient(
-        StreamableHttpMcpToolCaller(mcp_endpoint, timeout_seconds=10)
+        StreamableHttpMcpToolCaller(
+            mcp_endpoint,
+            bearer_token=action_gateway_token,
+            timeout_seconds=10,
+        )
     )
-    return full_client, ReadOnlyEnterpriseOpsMcpClient(full_client)
+    read_client = EnterpriseOpsMcpClient(
+        StreamableHttpMcpToolCaller(
+            mcp_endpoint,
+            bearer_token=read_token,
+            timeout_seconds=10,
+        )
+    )
+    return full_client, ReadOnlyEnterpriseOpsMcpClient(read_client)
 
 
 def build_access_execution_service(
     session_factory: sessionmaker[Session],
     *,
     mcp_endpoint: str,
+    mcp_read_token: str,
+    mcp_action_gateway_token: str,
     action_executor_id: str = "system-action-executor",
 ) -> AccessRequestExecutionService:
     """Wire Action Gateway writes exclusively through enterprise-ops-mcp."""
-    full_client, _ = build_mcp_enterprise_clients(mcp_endpoint)
+    full_client, _ = build_mcp_enterprise_clients(
+        mcp_endpoint,
+        read_token=mcp_read_token,
+        action_gateway_token=mcp_action_gateway_token,
+    )
     gateway = ActionGateway(
         authorization=AccessActionAuthorization(frozenset({action_executor_id})),
         policy=AccessExecutionPolicyGuard(),
@@ -64,6 +84,8 @@ def build_access_workflow(
     session_factory: sessionmaker[Session],
     *,
     mcp_endpoint: str,
+    mcp_read_token: str,
+    mcp_action_gateway_token: str,
     checkpoint_path: str | Path,
     action_executor_id: str = "system-action-executor",
 ) -> tuple[AccessRequestWorkflow, SqliteCheckpointStore]:
@@ -72,6 +94,8 @@ def build_access_workflow(
     execution_service = build_access_execution_service(
         session_factory,
         mcp_endpoint=mcp_endpoint,
+        mcp_read_token=mcp_read_token,
+        mcp_action_gateway_token=mcp_action_gateway_token,
         action_executor_id=action_executor_id,
     )
     workflow = AccessRequestWorkflow(

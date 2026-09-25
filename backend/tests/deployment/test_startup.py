@@ -1,17 +1,43 @@
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth.models import User
 from app.auth.passwords import PasswordHasher
 from app.auth.seed import seed_demo_users
-from app.auth.service import AuthService
+from app.auth.service import (
+    AuthService,
+    InvalidAccessTokenError,
+    InvalidCredentialsError,
+)
 from start import run_migrations, wait_for_database
+from seed_demo_users import resolve_seed_password
 
 
 def config_path() -> Path:
     return Path(__file__).parents[2] / "alembic.ini"
+
+
+def test_non_development_demo_seed_requires_explicit_opt_in_and_password() -> None:
+    with pytest.raises(RuntimeError, match="explicit opt-in"):
+        resolve_seed_password(
+            environment="production",
+            allow_production_demo_seed=False,
+            configured_password="safe-demo-password",
+        )
+    with pytest.raises(RuntimeError, match="at least 8"):
+        resolve_seed_password(
+            environment="production",
+            allow_production_demo_seed=True,
+            configured_password="123456",
+        )
+    assert resolve_seed_password(
+        environment="production",
+        allow_production_demo_seed=True,
+        configured_password="safe-demo-password",
+    ) == "safe-demo-password"
 
 
 def test_container_bootstrap_waits_and_runs_migration(tmp_path, monkeypatch) -> None:
@@ -81,3 +107,25 @@ def test_demo_user_seed_is_idempotent_and_uses_supplied_passwords(
     ).user
     assert procurement_owner.employee_id == "EMP-PROCUREMENT-OWNER"
     assert {role.value for role in procurement_owner.roles} == {"approver"}
+
+    active_token = auth.login(
+        username="employee",
+        password="employee-password",
+    ).access_token
+    seed_demo_users(
+        auth,
+        employee_password="123456",
+        manager_password="123456",
+        operator_password="123456",
+        hr_password="123456",
+        reset_existing_credentials=True,
+    )
+
+    with pytest.raises(InvalidAccessTokenError):
+        auth.authenticate(active_token)
+    with pytest.raises(InvalidCredentialsError):
+        auth.login(username="employee", password="employee-password")
+    assert auth.login(
+        username="employee",
+        password="123456",
+    ).user.employee_id == "EMP-1001"

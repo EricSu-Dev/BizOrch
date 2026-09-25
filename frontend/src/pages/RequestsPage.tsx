@@ -157,6 +157,11 @@ function RequestDetail({
         <ol className="request-timeline">
           {[...ticket.events].reverse().map((event, index) => {
             const target = statusView[event.to_status]
+            const reviewPayload = event.payload.workflow_payload
+            const publicSummary =
+              reviewPayload && typeof reviewPayload === 'object' && 'public_summary' in reviewPayload
+                ? (reviewPayload as { public_summary?: unknown }).public_summary
+                : null
             return (
               <li key={event.sequence} className={index === 0 ? 'latest' : ''}>
                 <div className="timeline-marker"><span>{event.sequence}</span></div>
@@ -165,7 +170,7 @@ function RequestDetail({
                     <strong>{workflowEventLabel(event.event_type)}</strong>
                     <Tag color={target.color}>{target.label}</Tag>
                   </div>
-                  <p>{target.description}</p>
+                  <p>{typeof publicSummary === 'string' ? publicSummary : target.description}</p>
                   <small>{formatDate(event.created_at)}</small>
                 </article>
               </li>

@@ -39,6 +39,7 @@ export function AppShell() {
           {canApprove && <NavLink className="nav-approvals" to="/approvals">审批工作台</NavLink>}
           {canManageKnowledge && <NavLink className="nav-knowledge" to="/knowledge">企业知识库</NavLink>}
           {canManageEvaluations && <NavLink className="nav-evaluations" to="/evaluations">评测中心</NavLink>}
+          {canManageEvaluations && <NavLink to="/human-reviews">人工核对</NavLink>}
         </nav>
         <div className="sidebar-foot">
           <NavLink

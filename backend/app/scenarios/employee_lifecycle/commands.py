@@ -337,6 +337,8 @@ class EmployeeLifecycleIntakeService:
                 WorkflowState.EXECUTING,
             }:
                 return
+            if self._execution_service.is_active(checkpoint.workflow_run_id):
+                return
             plan = ActionPlanRepository(session).get(
                 checkpoint.action_plan_id,
                 checkpoint.action_plan_version,

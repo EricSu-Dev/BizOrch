@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     checkpoint_path: Path = Path("data/checkpoints/langgraph.db")
     enterprise_ops_base_url: str = "http://127.0.0.1:8100"
     enterprise_ops_mcp_url: str = "http://127.0.0.1:8200/mcp"
+    enterprise_ops_mcp_read_token: SecretStr = SecretStr(
+        "bizorch-development-mcp-read-token"
+    )
+    enterprise_ops_mcp_action_gateway_token: SecretStr = SecretStr(
+        "bizorch-development-mcp-action-gateway-token"
+    )
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
     oss_bucket_name: str = ""

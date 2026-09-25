@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -43,6 +45,33 @@ class SuccessfulGateway:
             outcome=ActionGatewayOutcome.SUCCEEDED,
             action_id=proposal.action_id,
             action_version=proposal.version,
+            idempotency_key=idempotency_key,
+        )
+
+
+class CrashingGateway:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def execute(self, *args, **kwargs) -> ActionGatewayResult:
+        self.calls += 1
+        raise RuntimeError("process terminated during external execution")
+
+
+class BlockingGateway(SuccessfulGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = Event()
+        self.release = Event()
+
+    def execute(self, proposal, *, actor_id, approval_id, idempotency_key):
+        self.entered.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("test gateway was not released")
+        return super().execute(
+            proposal,
+            actor_id=actor_id,
+            approval_id=approval_id,
             idempotency_key=idempotency_key,
         )
 
@@ -103,6 +132,102 @@ def test_graph_interrupts_at_approval_and_persists_checkpoint(tmp_path) -> None:
         assert snapshot.approval_status is ApprovalStatus.PENDING
         assert gateway.calls == 0
     finally:
+        store.close()
+
+
+def test_interrupted_execute_checkpoint_routes_to_human_without_retry(tmp_path) -> None:
+    sessions = build_session_factory(tmp_path)
+    crashing = CrashingGateway()
+    workflow, store = build_workflow(
+        sessions, tmp_path / "checkpoints.db", crashing
+    )
+    try:
+        waiting = start(workflow)
+        with pytest.raises(RuntimeError, match="process terminated"):
+            workflow.decide_and_resume(
+                workflow_run_id="run-1",
+                approval_id=waiting.approval_id or "",
+                expected_workflow_version=waiting.workflow_version,
+                actor_id="EMP-MANAGER",
+                decision=ApprovalDecisionType.APPROVE,
+            )
+        interrupted = workflow.snapshot("run-1")
+        assert interrupted.workflow_state is WorkflowState.EXECUTING
+        assert interrupted.next_nodes == ("execute",)
+        assert crashing.calls == 1
+    finally:
+        store.close()
+
+    recovered, reopened_store = build_workflow(
+        sessions, tmp_path / "checkpoints.db", SuccessfulGateway()
+    )
+    try:
+        result = recovered.resume_recorded_approval(
+            workflow_run_id="run-1",
+            approval_id=waiting.approval_id or "",
+        )
+        assert result.workflow_state is WorkflowState.WAITING_HUMAN
+        assert not result.checkpoint_pending
+        assert result.execution_outcome == "HUMAN_REVIEW"
+        with sessions() as session:
+            events = list(
+                session.scalars(
+                    select(WorkflowEvent).where(WorkflowEvent.run_id == "run-1")
+                )
+            )
+        assert events[-1].event_type == "ACTION_EXECUTION_INTERRUPTED_REQUIRES_HUMAN"
+    finally:
+        reopened_store.close()
+
+
+def test_duplicate_approval_does_not_recover_a_live_execution(tmp_path) -> None:
+    sessions = build_session_factory(tmp_path)
+    gateway = BlockingGateway()
+    workflow, store = build_workflow(
+        sessions, tmp_path / "checkpoints.db", gateway
+    )
+    try:
+        waiting = start(workflow)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(
+                workflow.decide_and_resume,
+                workflow_run_id="run-1",
+                approval_id="approval-1",
+                expected_workflow_version=waiting.workflow_version,
+                actor_id="EMP-MANAGER",
+                decision=ApprovalDecisionType.APPROVE,
+            )
+            assert gateway.entered.wait(timeout=5)
+            try:
+                executing = workflow.snapshot("run-1")
+                assert executing.workflow_state is WorkflowState.EXECUTING
+                with pytest.raises(AccessWorkflowResumeError):
+                    workflow.decide_and_resume(
+                        workflow_run_id="run-1",
+                        approval_id="wrong-approval",
+                        expected_workflow_version=waiting.workflow_version,
+                        actor_id="OTHER-APPROVER",
+                        decision=ApprovalDecisionType.APPROVE,
+                    )
+                duplicate = workflow.decide_and_resume(
+                    workflow_run_id="run-1",
+                    approval_id="approval-1",
+                    expected_workflow_version=waiting.workflow_version,
+                    actor_id="EMP-MANAGER",
+                    decision=ApprovalDecisionType.APPROVE,
+                )
+                assert duplicate.workflow_state is WorkflowState.EXECUTING
+            finally:
+                gateway.release.set()
+            assert future.result(timeout=5).workflow_state is WorkflowState.COMPLETED
+        assert gateway.calls == 1
+        with sessions() as session:
+            events = session.scalars(
+                select(WorkflowEvent).where(WorkflowEvent.run_id == "run-1")
+            ).all()
+        assert all("INTERRUPTED" not in event.event_type for event in events)
+    finally:
+        gateway.release.set()
         store.close()
 
 

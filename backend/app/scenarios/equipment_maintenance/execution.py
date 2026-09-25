@@ -6,6 +6,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.actions.activity import ExecutionActivityRegistry
 from app.actions.contracts import (
     ActionGatewayOutcome,
     ActionGatewayResult,
@@ -256,8 +257,34 @@ class MaintenanceRequestExecutionService:
     ) -> None:
         self._session_factory = session_factory
         self._gateway = gateway
+        self._activity = ExecutionActivityRegistry()
+
+    def is_active(self, workflow_run_id: str) -> bool:
+        return self._activity.is_active(workflow_run_id)
 
     def execute(
+        self,
+        *,
+        workflow_run_id: str,
+        expected_workflow_version: int,
+        action_id: str,
+        action_version: int,
+        approval_id: str,
+        actor_id: str,
+        idempotency_key: str,
+    ) -> MaintenanceExecutionResult:
+        with self._activity.claim(workflow_run_id):
+            return self._execute_once(
+                workflow_run_id=workflow_run_id,
+                expected_workflow_version=expected_workflow_version,
+                action_id=action_id,
+                action_version=action_version,
+                approval_id=approval_id,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key,
+            )
+
+    def _execute_once(
         self,
         *,
         workflow_run_id: str,
@@ -337,3 +364,30 @@ class MaintenanceRequestExecutionService:
                 event_type=event_type,
                 payload=payload,
             )
+
+    def recover_interrupted_execution(
+        self,
+        *,
+        workflow_run_id: str,
+    ) -> MaintenanceExecutionResult:
+        """Route an interrupted maintenance write to reconciliation, never retry it."""
+        self._activity.require_inactive(workflow_run_id)
+        with self._session_factory.begin() as session:
+            workflows = WorkflowRepository(session)
+            workflow = workflows.get(workflow_run_id)
+            if workflow.workflow_state is WorkflowState.EXECUTING:
+                workflow = workflows.transition(
+                    workflow_run_id,
+                    expected_version=workflow.version,
+                    target=WorkflowState.WAITING_HUMAN,
+                    event_type="MAINTENANCE_EXECUTION_INTERRUPTED_REQUIRES_HUMAN",
+                    payload={"reason": "execution_result_not_durable"},
+                )
+            if workflow.workflow_state is not WorkflowState.WAITING_HUMAN:
+                raise RuntimeError("workflow is not an interrupted maintenance execution")
+        return MaintenanceExecutionResult(
+            workflow_run_id=workflow.id,
+            workflow_state=workflow.workflow_state,
+            workflow_version=workflow.version,
+            human_review_reason="INTERRUPTED_EXECUTION_REQUIRES_RECONCILIATION",
+        )

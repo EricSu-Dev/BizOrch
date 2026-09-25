@@ -270,6 +270,8 @@ const workflowEventLabels: Record<string, string> = {
   PROCUREMENT_EXECUTION_STARTED: '开始创建采购申请并预占预算',
   PROCUREMENT_EXECUTION_COMPLETED: '采购申请与预算预占已验证完成',
   PROCUREMENT_EXECUTION_REQUIRES_HUMAN: '采购执行已转人工处理',
+  HUMAN_REVIEW_NOTE_RECORDED: '人工核对进展已记录',
+  HUMAN_REVIEW_CONCLUDED: '人工核对已结案',
 }
 
 const fieldValueLabels: Record<string, Record<string, string>> = {

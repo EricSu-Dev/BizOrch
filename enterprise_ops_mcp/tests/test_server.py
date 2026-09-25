@@ -402,11 +402,13 @@ def test_runtime_server_accepts_shared_local_environment_name(monkeypatch) -> No
         "BIZORCH_ENTERPRISE_OPS_BASE_URL", "http://127.0.0.1:8100"
     )
     monkeypatch.setenv("ENTERPRISE_INTERNAL_TOKEN", "internal-token")
+    monkeypatch.setenv("BIZORCH_MCP_READ_TOKEN", "read-token")
+    monkeypatch.setenv("BIZORCH_MCP_ACTION_GATEWAY_TOKEN", "gateway-token")
     monkeypatch.setattr(server_module, "EnterpriseOpsHttpClient", CapturingClient)
     monkeypatch.setattr(
         server_module,
         "create_server",
-        lambda client: sentinel,
+        lambda client, **kwargs: sentinel,
     )
 
     result = server_module.create_runtime_server()
@@ -585,7 +587,7 @@ def test_read_tool_returns_structured_content_over_real_mcp_session() -> None:
 def test_write_tool_forwards_action_gateway_idempotency_key() -> None:
     async def scenario() -> None:
         client = FakeEnterpriseHttpClient()
-        server = create_server(client)
+        server = create_server(client, allow_test_write_access=True)
         async with create_connected_server_and_client_session(server) as session:
             result = await session.call_tool(
                 "grant_application_access",
@@ -606,10 +608,74 @@ def test_write_tool_forwards_action_gateway_idempotency_key() -> None:
     anyio.run(scenario)
 
 
+def test_read_capability_cannot_invoke_a_write_tool(monkeypatch) -> None:
+    async def scenario() -> None:
+        client = FakeEnterpriseHttpClient()
+        verifier = server_module.StaticMcpTokenVerifier(
+            read_token="read-token",
+            action_gateway_token="gateway-token",
+        )
+        read_capability = await verifier.verify_token("read-token")
+        monkeypatch.setattr(
+            server_module,
+            "get_access_token",
+            lambda: read_capability,
+        )
+        server = create_server(client)
+        async with create_connected_server_and_client_session(server) as session:
+            result = await session.call_tool(
+                "grant_application_access",
+                {
+                    "employee_id": "EMP-1001",
+                    "application_code": "CRM",
+                    "role_code": "read_only",
+                    "duration_days": 30,
+                    "idempotency_key": "grant:action-1:v1",
+                },
+            )
+
+        assert result.isError
+        assert client.last_idempotency_key is None
+
+    anyio.run(scenario)
+
+
+def test_action_gateway_capability_can_invoke_a_write_tool(monkeypatch) -> None:
+    async def scenario() -> None:
+        client = FakeEnterpriseHttpClient()
+        verifier = server_module.StaticMcpTokenVerifier(
+            read_token="read-token",
+            action_gateway_token="gateway-token",
+        )
+        gateway_capability = await verifier.verify_token("gateway-token")
+        monkeypatch.setattr(
+            server_module,
+            "get_access_token",
+            lambda: gateway_capability,
+        )
+        server = create_server(client)
+        async with create_connected_server_and_client_session(server) as session:
+            result = await session.call_tool(
+                "grant_application_access",
+                {
+                    "employee_id": "EMP-1001",
+                    "application_code": "CRM",
+                    "role_code": "read_only",
+                    "duration_days": 30,
+                    "idempotency_key": "grant:action-1:v1",
+                },
+            )
+
+        assert not result.isError
+        assert client.last_idempotency_key == "grant:action-1:v1"
+
+    anyio.run(scenario)
+
+
 def test_maintenance_write_tool_forwards_exact_payload_and_key() -> None:
     async def scenario() -> None:
         client = FakeEnterpriseHttpClient()
-        server = create_server(client)
+        server = create_server(client, allow_test_write_access=True)
         async with create_connected_server_and_client_session(server) as session:
             result = await session.call_tool(
                 "create_maintenance_work_order",

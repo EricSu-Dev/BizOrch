@@ -25,6 +25,7 @@ from app.evaluation.governance import EvaluationGovernanceService
 from app.persistence.database import build_session_factory
 from pathlib import Path
 from app.workflow.query import WorkflowProgressQueryService
+from app.workflow.human_review import HumanReviewService
 
 
 class CurrentActor(BaseModel):
@@ -66,6 +67,12 @@ def get_workflow_progress(
     runtime: Annotated[ApplicationRuntime, Depends(get_runtime)],
 ) -> WorkflowProgressQueryService:
     return runtime.workflow_progress
+
+
+def get_human_review(
+    runtime: Annotated[ApplicationRuntime, Depends(get_runtime)],
+) -> HumanReviewService:
+    return runtime.human_review
 
 
 def get_approval_workbench(
@@ -150,6 +157,14 @@ def require_approver(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> CurrentActor:
     if not actor.roles.intersection({"approver", "admin"}):
+        raise InsufficientRoleError(actor.user_id)
+    return actor
+
+
+def require_human_reviewer(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> CurrentActor:
+    if not actor.roles.intersection({"operator", "admin"}):
         raise InsufficientRoleError(actor.user_id)
     return actor
 

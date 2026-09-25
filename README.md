@@ -2,7 +2,7 @@
 
 > 面向跨行业企业的智能服务与业务流程自动化平台。
 
-![Status](https://img.shields.io/badge/status-deployed-1f8f83?style=flat-square)
+![Status](https://img.shields.io/badge/status-deployed%20%7C%20acceptance%20pending-e6a23c?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?style=flat-square&logo=python&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=0B1F2A)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
@@ -244,7 +244,7 @@ npm run build
 
 ## Docker 与 Linux 部署
 
-生产环境已采用容器化交付：
+`2026.09.24-1` 已部署到 2 核 2GB 阿里云 Linux 服务器；本地 Compose E2E、线上健康检查、演示身份权限检查与持久化挂载读写检查已通过。知识入库和完整 Agent 流程的资源峰值、重启恢复及实际回滚演练仍待验收：
 
 - `bizorch-api`：FastAPI、业务工作流和 Agent 编排；
 - `enterprise-system`：独立模拟企业业务系统；

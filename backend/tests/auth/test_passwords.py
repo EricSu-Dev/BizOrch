@@ -17,8 +17,16 @@ def test_scrypt_hash_uses_random_salt_and_verifies() -> None:
 
 
 def test_password_policy_rejects_short_password() -> None:
-    with pytest.raises(ValueError, match="at least 8"):
+    with pytest.raises(ValueError, match="at least 6"):
         PasswordHasher(n=2**10).hash("short")
+
+
+def test_password_hasher_accepts_explicit_six_character_demo_password() -> None:
+    hasher = PasswordHasher(n=2**10)
+
+    encoded = hasher.hash("123456")
+
+    assert hasher.verify("123456", encoded)
 
 
 def test_malformed_hash_fails_closed() -> None:

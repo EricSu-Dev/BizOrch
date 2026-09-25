@@ -64,6 +64,17 @@ class AuthRepository:
         user.password_hash = password_hash
         self._session.flush()
 
+    def update_login_credentials(
+        self,
+        user: User,
+        *,
+        username: str,
+        password_hash: str,
+    ) -> None:
+        user.username = username
+        user.password_hash = password_hash
+        self._session.flush()
+
     def update_avatar_object(
         self,
         user: User,
@@ -146,6 +157,22 @@ class AuthRepository:
             .where(
                 AuthSession.user_id == user_id,
                 AuthSession.token_hash != current_token_hash,
+                AuthSession.revoked_at.is_(None),
+            )
+            .values(revoked_at=revoked_at)
+        )
+        return result.rowcount
+
+    def revoke_all_sessions(
+        self,
+        *,
+        user_id: str,
+        revoked_at: datetime,
+    ) -> int:
+        result = self._session.execute(
+            update(AuthSession)
+            .where(
+                AuthSession.user_id == user_id,
                 AuthSession.revoked_at.is_(None),
             )
             .values(revoked_at=revoked_at)

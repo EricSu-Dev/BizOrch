@@ -10,6 +10,7 @@ class PasswordHasher:
     """Hash and verify passwords without ever storing reversible secrets."""
 
     ALGORITHM = "scrypt"
+    MIN_PASSWORD_LENGTH = 6
 
     def __init__(
         self,
@@ -75,8 +76,11 @@ class PasswordHasher:
 
     @staticmethod
     def _password_bytes(password: str) -> bytes:
-        if len(password) < 8:
-            raise ValueError("password must contain at least 8 characters")
+        if len(password) < PasswordHasher.MIN_PASSWORD_LENGTH:
+            raise ValueError(
+                "password must contain at least "
+                f"{PasswordHasher.MIN_PASSWORD_LENGTH} characters"
+            )
         encoded = password.encode("utf-8")
         if len(encoded) > 1024:
             raise ValueError("password is too long")

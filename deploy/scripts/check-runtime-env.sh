@@ -8,7 +8,7 @@ if [ ! -f "$runtime_env_file" ]; then
     exit 1
 fi
 
-required_keys='BIZORCH_DATA_DIR BIZORCH_LOG_DIR BIZORCH_API_IMAGE BIZORCH_ENTERPRISE_IMAGE BIZORCH_MCP_IMAGE BIZORCH_DATABASE_URL ENTERPRISE_DATABASE_URL ENTERPRISE_INTERNAL_TOKEN DEEPSEEK_API_KEY DASHSCOPE_API_KEY BIZORCH_OSS_BUCKET_NAME BIZORCH_OSS_ENDPOINT BIZORCH_OSS_ACCESS_KEY_ID BIZORCH_OSS_ACCESS_KEY_SECRET'
+required_keys='BIZORCH_DATA_DIR BIZORCH_LOG_DIR BIZORCH_API_IMAGE BIZORCH_ENTERPRISE_IMAGE BIZORCH_MCP_IMAGE BIZORCH_DATABASE_URL ENTERPRISE_DATABASE_URL ENTERPRISE_INTERNAL_TOKEN BIZORCH_MCP_READ_TOKEN BIZORCH_MCP_ACTION_GATEWAY_TOKEN DEEPSEEK_API_KEY DASHSCOPE_API_KEY BIZORCH_OSS_BUCKET_NAME BIZORCH_OSS_ENDPOINT BIZORCH_OSS_ACCESS_KEY_ID BIZORCH_OSS_ACCESS_KEY_SECRET'
 
 file_mode=$(stat -c '%a' "$runtime_env_file")
 if [ "$file_mode" != "600" ]; then
@@ -58,6 +58,13 @@ internal_token=$(sed -n 's/^ENTERPRISE_INTERNAL_TOKEN=//p' "$runtime_env_file" |
 if [ "${#internal_token}" -lt 32 ]; then
     echo "ENTERPRISE_INTERNAL_TOKEN must contain at least 32 characters" >&2
     missing=1
+fi
+
+read_token=$(sed -n 's/^BIZORCH_MCP_READ_TOKEN=//p' "$runtime_env_file" | head -n 1)
+gateway_token=$(sed -n 's/^BIZORCH_MCP_ACTION_GATEWAY_TOKEN=//p' "$runtime_env_file" | head -n 1)
+if [ ${#read_token} -lt 32 ] || [ ${#gateway_token} -lt 32 ] || [ "$read_token" = "$gateway_token" ]; then
+    echo "MCP read and Action Gateway tokens must be distinct and at least 32 characters" >&2
+    exit 1
 fi
 
 if [ "$missing" -ne 0 ]; then
